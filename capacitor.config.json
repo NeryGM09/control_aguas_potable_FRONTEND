@@ -1,0 +1,20 @@
+{
+  "appId": "com.controlaguas.app",
+  "appName": "Control de Aguas",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "cleartext": true,
+    "allowNavigation": [
+      "172.16.6.120",
+      "10.0.2.2",
+      "localhost"
+    ]
+  },
+  "plugins": {
+    "CapacitorSQLite": {
+      "androidDatabaseLocation": "default",
+      "androidSQLiteIsEncryption": false
+    }
+  }
+}
