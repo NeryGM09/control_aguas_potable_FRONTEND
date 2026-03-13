@@ -50,7 +50,16 @@ export default function Login() {
       const code = err?.code;
       const baseURL = getApiBaseURL();
       const extra = baseURL ? `URL: ${baseURL}` : "";
-      if (code === "ECONNABORTED") {
+      if (code === "OFFLINE_NO_USER") {
+        setError("Este usuario no esta disponible sin conexion.");
+        setErrorDetail("Conectate a internet y vuelve a iniciar sesion para habilitar el modo offline.");
+      } else if (code === "OFFLINE_INVALID") {
+        setError("Credenciales invalidas para modo offline.");
+        setErrorDetail("Conectate a internet e intenta nuevamente.");
+      } else if (code === "CRYPTO_UNAVAILABLE") {
+        setError("No se puede validar el modo offline en este dispositivo.");
+        setErrorDetail("Conectate a internet para iniciar sesion.");
+      } else if (code === "ECONNABORTED") {
         setError("Tiempo de espera agotado. Revisa la conexión.");
       } else if (!err?.response) {
         setError("Sin conexión con el servidor.");
@@ -278,4 +287,3 @@ export default function Login() {
     </Box>
   );
 }
-

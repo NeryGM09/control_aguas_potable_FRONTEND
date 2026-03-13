@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
+import { getApiBaseURL } from "../api/api";
 import { createRegistro, getRegistros, initOffline, updateRegistro } from "../offline/registroService";
 import {
   Box,
@@ -23,12 +24,23 @@ import {
 } from "@mui/material";
 import { useAuth } from "../auth/AuthContext";
 
+const parseNumber = (value) => {
+  if (value === null || value === undefined) return Number.NaN;
+  if (typeof value === "number") return value;
+  const text = String(value).trim();
+  if (!text) return Number.NaN;
+  const normalized = text.replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
 export default function TableControl() {
   const { user } = useAuth();
   const theme = useTheme();
   const [controles, setControles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [errorDetail, setErrorDetail] = useState("");
   const [puntoMuestreo, setPuntoMuestreo] = useState("");
   const [cruda, setCruda] = useState({ ph: "", conductividad: "", turbidez: "" });
   const [decantada, setDecantada] = useState({ ph: "", conductividad: "", turbidez: "" });
@@ -115,20 +127,20 @@ export default function TableControl() {
       punto_muestreo: editValues?.punto_muestreo ?? "",
       observaciones: editValues?.observaciones ?? "",
       cruda: {
-        ph: Number(editValues?.cruda?.ph),
-        conductividad: Number(editValues?.cruda?.conductividad),
-        turbidez: Number(editValues?.cruda?.turbidez),
+        ph: parseNumber(editValues?.cruda?.ph),
+        conductividad: parseNumber(editValues?.cruda?.conductividad),
+        turbidez: parseNumber(editValues?.cruda?.turbidez),
       },
       decantada: {
-        ph: Number(editValues?.decantada?.ph),
-        conductividad: Number(editValues?.decantada?.conductividad),
-        turbidez: Number(editValues?.decantada?.turbidez),
+        ph: parseNumber(editValues?.decantada?.ph),
+        conductividad: parseNumber(editValues?.decantada?.conductividad),
+        turbidez: parseNumber(editValues?.decantada?.turbidez),
       },
       tratada: {
-        ph: Number(editValues?.tratada?.ph),
-        conductividad: Number(editValues?.tratada?.conductividad),
-        turbidez: Number(editValues?.tratada?.turbidez),
-        cloro: Number(editValues?.tratada?.cloro),
+        ph: parseNumber(editValues?.tratada?.ph),
+        conductividad: parseNumber(editValues?.tratada?.conductividad),
+        turbidez: parseNumber(editValues?.tratada?.turbidez),
+        cloro: parseNumber(editValues?.tratada?.cloro),
       },
     };
 
@@ -150,6 +162,20 @@ export default function TableControl() {
       if (typeof first?.msg === "string" && first.msg.trim()) return first.msg;
     }
     return fallbackMessage;
+  };
+  const buildErrorDetail = (err) => {
+    const baseURL = getApiBaseURL();
+    const status = err?.response?.status;
+    const pieces = [];
+    if (status) {
+      pieces.push(`HTTP ${status}`);
+    } else if (err?.message) {
+      pieces.push(err.message);
+    }
+    if (baseURL) {
+      pieces.push(`URL: ${baseURL}`);
+    }
+    return pieces.join(" | ");
   };
 
   const refreshRegistros = async () => {
@@ -179,7 +205,7 @@ export default function TableControl() {
       ];
 
       if (numericValues.some((value) => Number.isNaN(value))) {
-        setEditError("Completa todos los campos numÃ©ricos antes de guardar.");
+        setEditError("Completa todos los campos numéricos antes de guardar.");
         return;
       }
 
@@ -202,6 +228,7 @@ export default function TableControl() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setErrorDetail("");
     setSubmitting(true);
     try {
       const payload = {
@@ -211,22 +238,40 @@ export default function TableControl() {
         encargado: user?.username || "",
         observaciones,
         cruda: {
-          ph: Number(cruda.ph),
-          conductividad: Number(cruda.conductividad),
-          turbidez: Number(cruda.turbidez),
+          ph: parseNumber(cruda.ph),
+          conductividad: parseNumber(cruda.conductividad),
+          turbidez: parseNumber(cruda.turbidez),
         },
         decantada: {
-          ph: Number(decantada.ph),
-          conductividad: Number(decantada.conductividad),
-          turbidez: Number(decantada.turbidez),
+          ph: parseNumber(decantada.ph),
+          conductividad: parseNumber(decantada.conductividad),
+          turbidez: parseNumber(decantada.turbidez),
         },
         tratada: {
-          ph: Number(tratada.ph),
-          conductividad: Number(tratada.conductividad),
-          turbidez: Number(tratada.turbidez),
-          cloro: Number(tratada.cloro),
+          ph: parseNumber(tratada.ph),
+          conductividad: parseNumber(tratada.conductividad),
+          turbidez: parseNumber(tratada.turbidez),
+          cloro: parseNumber(tratada.cloro),
         },
       };
+
+      const numericValues = [
+        payload.cruda.ph,
+        payload.cruda.conductividad,
+        payload.cruda.turbidez,
+        payload.decantada.ph,
+        payload.decantada.conductividad,
+        payload.decantada.turbidez,
+        payload.tratada.ph,
+        payload.tratada.conductividad,
+        payload.tratada.turbidez,
+        payload.tratada.cloro,
+      ];
+
+      if (numericValues.some((value) => Number.isNaN(value))) {
+        setError("Completa todos los campos numéricos con valores válidos.");
+        return;
+      }
 
       await createRegistro(payload);
 
@@ -238,7 +283,9 @@ export default function TableControl() {
 
       await refreshRegistros();
     } catch (err) {
-      setError("No se pudo guardar el registro. Revisa los datos.");
+      console.error("createRegistro failed", err);
+      setError(extractApiErrorMessage(err, "No se pudo guardar el registro. Revisa los datos."));
+      setErrorDetail(buildErrorDetail(err));
     } finally {
       setSubmitting(false);
     }
@@ -575,9 +622,16 @@ export default function TableControl() {
           </Paper>
 
           {error && (
-            <Typography color="error" variant="body2" sx={{ mt: 2 }}>
-              {error}
-            </Typography>
+            <Box sx={{ mt: 2 }}>
+              <Typography color="error" variant="body2">
+                {error}
+              </Typography>
+              {errorDetail && (
+                <Typography color="text.secondary" variant="caption">
+                  {errorDetail}
+                </Typography>
+              )}
+            </Box>
           )}
 
           <Box sx={{ display: "flex", justifyContent: { xs: "stretch", sm: "flex-end" }, mt: 2 }}>
@@ -1450,6 +1504,12 @@ export default function TableControl() {
     </Box>
   );
 }
+
+
+
+
+
+
 
 
 

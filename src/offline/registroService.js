@@ -138,7 +138,7 @@ export async function getRegistros() {
   const online = await getOnlineStatus();
   if (online) {
     try {
-      const res = await api.get("/registros");
+      const res = await api.get("/registros/");
       await cacheRemote(res.data || []);
       return res.data || [];
     } catch (err) {
@@ -154,7 +154,7 @@ export async function createRegistro(payload) {
 
   if (online) {
     try {
-      const res = await api.post("/registros", payload);
+      const res = await api.post("/registros/", payload);
       if (res?.data) {
         await upsertRemoteRegistro(res.data.id, res.data);
       }
@@ -180,7 +180,7 @@ export async function updateRegistro(record, payloadEditable, payloadFull) {
 
   if (online && remoteId && typeof remoteId === "number") {
     try {
-      await api.put(`/registros/${remoteId}`, payloadEditable);
+      await api.put(`/registros/${remoteId}/`, payloadEditable);
       await updateLocalByRemoteId(remoteId, mergedPayload, "synced");
       return true;
     } catch (err) {

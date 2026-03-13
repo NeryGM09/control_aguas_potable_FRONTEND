@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { SQLiteConnection } from "@capacitor-community/sqlite";
+import { CapacitorSQLite, SQLiteConnection } from "@capacitor-community/sqlite";
 
 const DB_NAME = "control_aguas";
 const DB_VERSION = 1;
@@ -15,7 +15,7 @@ async function getDb() {
   if (!isNative()) return null;
 
   if (!sqlite) {
-    sqlite = new SQLiteConnection(Capacitor);
+    sqlite = new SQLiteConnection(CapacitorSQLite);
   }
 
   if (!db) {

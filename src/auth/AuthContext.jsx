@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { Capacitor } from "@capacitor/core";
 import { Network } from "@capacitor/network";
 import { api } from "../api/api";
+import { upsertOfflineUser, verifyOfflineUser } from "./offlineAuth";
 
 const AuthContext = createContext(null);
 
@@ -21,43 +22,49 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    let cancelled = false;
 
-    api
-      .get("/auth/me")
-      .then((res) => {
-        setUser(res.data);
-        localStorage.setItem("last_user", JSON.stringify(res.data));
-      })
-      .catch(async () => {
-        const online = await isOnline();
-        if (!online) {
-          const cached = localStorage.getItem("last_user");
-          if (cached) {
-            setUser(JSON.parse(cached));
-          }
-          return;
-        }
-        localStorage.removeItem("token");
-        sessionStorage.removeItem("token");
+    const bootstrap = async () => {
+      // Always require login when the app starts.
+      localStorage.removeItem("token");
+      sessionStorage.removeItem("token");
+      if (!cancelled) {
         setUser(null);
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      }
+    };
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = async (username, password, remember) => {
-    const res = await api.post("/auth/login", { username, password });
-    const { access_token, user: userData } = res.data;
+    const trimmed = String(username || "").trim();
+    const online = await isOnline();
+
+    if (online) {
+      const res = await api.post("/auth/login", { username: trimmed, password });
+      const { access_token, user: userData } = res.data;
+      localStorage.removeItem("token");
+      sessionStorage.removeItem("token");
+      const storage = remember ? localStorage : sessionStorage;
+      storage.setItem("token", access_token);
+      localStorage.setItem("last_user", JSON.stringify(userData));
+      await upsertOfflineUser(userData, password, access_token);
+      setUser(userData);
+      return { mode: "online" };
+    }
+
+    const offline = await verifyOfflineUser(trimmed, password);
     localStorage.removeItem("token");
     sessionStorage.removeItem("token");
-    const storage = remember ? localStorage : sessionStorage;
-    storage.setItem("token", access_token);
-    localStorage.setItem("last_user", JSON.stringify(userData));
-    setUser(userData);
+    if (offline.token) {
+      sessionStorage.setItem("token", offline.token);
+    }
+    setUser(offline.user);
+    return { mode: "offline" };
   };
 
   const logout = () => {
