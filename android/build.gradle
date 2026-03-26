@@ -24,14 +24,14 @@ allprojects {
     }
 }
 
-// Force Java 17 across all Android modules (Capacitor may regenerate module files).
+// Force Java 21 across all Android modules (matches Capacitor + Kotlin toolchain).
 subprojects { project ->
     project.afterEvaluate {
         if (project.hasProperty("android")) {
             project.android {
                 compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_17
-                    targetCompatibility JavaVersion.VERSION_17
+                    sourceCompatibility JavaVersion.VERSION_21
+                    targetCompatibility JavaVersion.VERSION_21
                 }
             }
         }

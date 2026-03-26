@@ -40,21 +40,32 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = async (username, password, remember) => {
+  const login = async (username, password, remember, options = {}) => {
+    const beforeSetUser = options?.beforeSetUser;
     const trimmed = String(username || "").trim();
     const online = await isOnline();
 
     if (online) {
       const res = await api.post("/auth/login", { username: trimmed, password });
-      const { access_token, user: userData } = res.data;
+      const { access_token, user: userData } = res.data || {};
+      if (!access_token || !userData) {
+        const err = new Error("INVALID_LOGIN_RESPONSE");
+        err.code = "INVALID_LOGIN_RESPONSE";
+        err.response = { status: 401 };
+        throw err;
+      }
       localStorage.removeItem("token");
       sessionStorage.removeItem("token");
       const storage = remember ? localStorage : sessionStorage;
       storage.setItem("token", access_token);
       localStorage.setItem("last_user", JSON.stringify(userData));
       await upsertOfflineUser(userData, password, access_token);
+      const payload = { mode: "online", user: userData };
+      if (typeof beforeSetUser === "function") {
+        await beforeSetUser(payload);
+      }
       setUser(userData);
-      return { mode: "online" };
+      return payload;
     }
 
     const offline = await verifyOfflineUser(trimmed, password);
@@ -63,8 +74,12 @@ export function AuthProvider({ children }) {
     if (offline.token) {
       sessionStorage.setItem("token", offline.token);
     }
+    const payload = { mode: "offline", user: offline.user };
+    if (typeof beforeSetUser === "function") {
+      await beforeSetUser(payload);
+    }
     setUser(offline.user);
-    return { mode: "offline" };
+    return payload;
   };
 
   const logout = () => {

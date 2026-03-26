@@ -8,16 +8,15 @@ const envTimeout = import.meta.env.VITE_API_TIMEOUT;
 const isNative = Capacitor?.isNativePlatform?.() ?? false;
 const STORAGE_KEY = "api_base_url_override";
 
-const fallbackWebBaseURL = import.meta.env.DEV
-  ? "http://127.0.0.1:8000"
-  : "http://172.16.6.120:8000";
-const fallbackNativeBaseURL = import.meta.env.DEV
-  ? "http://10.0.2.2:8000"
-  : "http://172.16.6.120:8000";
+const fallbackWebBaseURL = "localhost:8000";
+const fallbackNativeBaseURL = "localhost:8000";
 
 function normalizeBaseURL(value) {
   if (!value) return value;
   let trimmed = String(value).trim();
+  if (trimmed.startsWith("/")) {
+    return trimmed;
+  }
   if (!/^https?:\/\//i.test(trimmed)) {
     trimmed = `http://${trimmed}`;
   }

@@ -1,7 +1,20 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseURL } from "../api/api";
-import { createRegistro, getRegistros, initOffline, updateRegistro } from "../offline/registroService";
 import {
+  createRegistro,
+  getOnlineStatus,
+  getRegistros,
+  initOffline,
+  onNetworkStatusChange,
+  syncNow,
+  updateRegistro,
+} from "../offline/registroService";
+import { Capacitor } from "@capacitor/core";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+import { jsPDF } from "jspdf";
+import { getSociedadLogoSrc } from "../utils/sociedadLogo";
+import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -11,6 +24,7 @@ import {
   DialogContent,
   DialogTitle,
   Paper,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -34,6 +48,70 @@ const parseNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
+const formatDateYMD = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateDMY = (date) => {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const formatTimeHM = (date) => {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const getWeekRange = (baseDate = new Date()) => {
+  const date = new Date(baseDate);
+  const day = date.getDay(); // 0 = Sunday
+  const diffToMonday = (day + 6) % 7;
+  const start = new Date(date);
+  start.setDate(date.getDate() - diffToMonday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
+const parseLocalDate = (dateText) => {
+  if (!dateText) return null;
+  const raw = String(dateText).trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const slashMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})$/);
+  if (slashMatch) {
+    const day = Number(slashMatch[1]);
+    const month = Number(slashMatch[2]);
+    let year = Number(slashMatch[3]);
+    if (year < 100) {
+      year = 2000 + year;
+    }
+    const parsed = new Date(year, month - 1, day);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  return null;
+};
+
+const truncateText = (value, max) => {
+  const text = String(value ?? "");
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 3))}...`;
+};
+
 export default function TableControl() {
   const { user } = useAuth();
   const theme = useTheme();
@@ -51,6 +129,12 @@ export default function TableControl() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
   const [selectedRecordId, setSelectedRecordId] = useState(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineNoticeOpen, setOfflineNoticeOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfNotice, setPdfNotice] = useState({ open: false, message: "", severity: "info" });
+  const [syncNotice, setSyncNotice] = useState({ open: false, message: "", severity: "success" });
+  const [logoDataUrl, setLogoDataUrl] = useState("");
 
   const now = useMemo(() => new Date(), []);
   const fechaActual = useMemo(() => {
@@ -65,6 +149,8 @@ export default function TableControl() {
     const seconds = String(now.getSeconds()).padStart(2, "0");
     return `${hours}:${minutes}:${seconds}`;
   }, [now]);
+  const currentWeek = getWeekRange(new Date());
+  const weekLabel = `${formatDateDMY(currentWeek.start)} al ${formatDateDMY(currentWeek.end)}`;
 
   const categoryColors = {
     cruda: { bg: "#DFF3E6", border: "#34A56F", text: "#0B5134" },
@@ -85,6 +171,26 @@ export default function TableControl() {
     () => controles.find((control) => control.id === selectedRecordId) || null,
     [controles, selectedRecordId]
   );
+  const logoSrc = useMemo(() => getSociedadLogoSrc(user), [user]);
+
+  const pendingCount = useMemo(
+    () => controles.filter((control) => control._syncStatus === "pending").length,
+    [controles]
+  );
+  const pendingCountRef = useRef(pendingCount);
+  const submitGuardRef = useRef(false);
+  const pendingNoticeSeverity = isOnline ? "info" : "warning";
+  const pendingNoticeMessage = useMemo(() => {
+    if (pendingCount === 0) return "";
+    if (isOnline) {
+      return `Sincronizando ${pendingCount} registro${pendingCount === 1 ? "" : "s"} pendiente${
+        pendingCount === 1 ? "" : "s"
+      }...`;
+    }
+    return pendingCount === 1
+      ? "Registro pendiente de envío. Se enviará automáticamente cuando vuelva el internet."
+      : `Hay ${pendingCount} registros pendientes de envío. Se enviarán automáticamente cuando vuelva el internet.`;
+  }, [isOnline, pendingCount]);
 
   const openEdit = (control) => {
     setEditError("");
@@ -179,8 +285,422 @@ export default function TableControl() {
   };
 
   const refreshRegistros = async () => {
-    const data = await getRegistros();
+    const data = await getRegistros({ user });
     setControles(data);
+  };
+
+  const showPdfNotice = (severity, message) => {
+    setPdfNotice({ open: true, severity, message });
+  };
+
+  const buildWeeklyPdf = (rows, range, logoUrl) => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 32;
+    const marginTop = 28;
+    const marginBottom = 36;
+    const tableWidth = pageWidth - marginX * 2;
+    const palette = {
+      primary: [37, 99, 235],
+      primarySoft: [239, 246, 255],
+      textDark: [15, 23, 42],
+      textMuted: [100, 116, 139],
+      border: [226, 232, 240],
+      rowAlt: [248, 250, 252],
+      header: [241, 245, 249],
+      cruda: [223, 243, 230],
+      decantada: [255, 240, 194],
+      tratada: [221, 235, 255],
+    };
+
+    const columns = [
+      { key: "fecha", label: "Fecha", width: 48, align: "center" },
+      { key: "hora", label: "Hora", width: 40, align: "center" },
+      { key: "cruda_ph", label: "pH", width: 26, align: "center" },
+      { key: "cruda_cond", label: "Cond (uS/cm2)", width: 44, align: "center" },
+      { key: "cruda_turb", label: "Turb (NTU)", width: 40, align: "center" },
+      { key: "dec_ph", label: "pH", width: 26, align: "center" },
+      { key: "dec_cond", label: "Cond (uS/cm2)", width: 44, align: "center" },
+      { key: "dec_turb", label: "Turb (NTU)", width: 40, align: "center" },
+      { key: "trat_ph", label: "pH", width: 26, align: "center" },
+      { key: "trat_cond", label: "Cond (uS/cm2)", width: 44, align: "center" },
+      { key: "trat_turb", label: "Turb (NTU)", width: 40, align: "center" },
+      { key: "trat_cloro", label: "Cloro (ppm)", width: 34, align: "center" },
+      { key: "punto_muestreo", label: "Punto", width: 70, align: "left" },
+      { key: "encargado", label: "Encargado", width: 70, align: "left" },
+      { key: "observaciones", label: "Observaciones", width: 120, align: "left" },
+    ];
+
+    const totalWidth = columns.reduce((sum, col) => sum + col.width, 0);
+    if (totalWidth !== tableWidth) {
+      const delta = tableWidth - totalWidth;
+      columns[columns.length - 1].width += delta;
+    }
+
+    const headerTopHeight = 18;
+    const headerBottomHeight = 18;
+    const totalHeaderHeight = headerTopHeight + headerBottomHeight;
+    const rowHeight = 18;
+
+    const columnPositions = [];
+    let cursorX = marginX;
+    columns.forEach((col) => {
+      columnPositions.push({ ...col, x: cursorX });
+      cursorX += col.width;
+    });
+
+    const getColumn = (key) => columnPositions.find((col) => col.key === key);
+
+    const drawCellText = (text, col, baselineY, options = {}) => {
+      const padding = options.padding ?? 4;
+      const align = col.align || "left";
+      if (align === "center") {
+        doc.text(String(text ?? ""), col.x + col.width / 2, baselineY, { align: "center" });
+        return;
+      }
+      if (align === "right") {
+        doc.text(String(text ?? ""), col.x + col.width - padding, baselineY, {
+          align: "right",
+        });
+        return;
+      }
+      doc.text(String(text ?? ""), col.x + padding, baselineY);
+    };
+
+    let y = marginTop;
+    const headerHeight = 56;
+
+    doc.setFillColor(...palette.primarySoft);
+    doc.rect(marginX, y, tableWidth, headerHeight, "F");
+    doc.setFillColor(...palette.primary);
+    doc.rect(marginX, y, tableWidth, 3, "F");
+
+    const logoSize = 32;
+    const textStartX = logoUrl ? marginX + 12 + logoSize + 8 : marginX + 12;
+
+    if (logoUrl) {
+      try {
+        doc.addImage(logoUrl, "PNG", marginX + 12, y + 12, logoSize, logoSize);
+      } catch (err) {
+        // ignore logo render errors
+      }
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(...palette.textDark);
+    doc.text("Reporte semanal de registros", textStartX, y + 26);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...palette.textMuted);
+    doc.text("Control de Agua Potable", textStartX, y + 44);
+
+    const generatedAt = new Date();
+    const badgeY = y + 18;
+    const badges = [
+      `Semana: ${formatDateDMY(range.start)} al ${formatDateDMY(range.end)}`,
+      `Generado: ${formatDateDMY(generatedAt)} ${formatTimeHM(generatedAt)}`,
+      `Registros: ${rows.length}`,
+    ];
+
+    let badgeX = marginX + tableWidth - 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    badges
+      .slice()
+      .reverse()
+      .forEach((label) => {
+        const paddingX = 6;
+        const paddingY = 4;
+        const textWidth = doc.getTextWidth(label);
+        const badgeWidth = textWidth + paddingX * 2;
+        badgeX -= badgeWidth;
+        doc.setFillColor(...palette.header);
+        doc.roundedRect(badgeX, badgeY, badgeWidth, 16, 6, 6, "F");
+        doc.setTextColor(...palette.textDark);
+        doc.text(label, badgeX + paddingX, badgeY + 11);
+        badgeX -= 8;
+      });
+
+    y += headerHeight + 14;
+
+    const renderHeader = () => {
+      const columnByKey = Object.fromEntries(columnPositions.map((col) => [col.key, col]));
+
+      const headerGroups = [
+        { label: "Fecha", keys: ["fecha"], spanRows: true, fill: palette.header },
+        { label: "Hora", keys: ["hora"], spanRows: true, fill: palette.header },
+        { label: "Agua Cruda", keys: ["cruda_ph", "cruda_cond", "cruda_turb"], fill: palette.cruda },
+        { label: "Agua Decantada", keys: ["dec_ph", "dec_cond", "dec_turb"], fill: palette.decantada },
+        {
+          label: "Agua Tratada",
+          keys: ["trat_ph", "trat_cond", "trat_turb", "trat_cloro"],
+          fill: palette.tratada,
+        },
+        { label: "Punto\nmuestreado", keys: ["punto_muestreo"], spanRows: true, fill: palette.header },
+        { label: "Encargado\nde la Planta", keys: ["encargado"], spanRows: true, fill: palette.header },
+        { label: "Observaciones", keys: ["observaciones"], spanRows: true, fill: palette.header },
+      ];
+
+      let x = marginX;
+      doc.setFont("helvetica", "bold");
+      headerGroups.forEach((group) => {
+        const groupWidth = group.keys.reduce((sum, key) => sum + columnByKey[key].width, 0);
+        doc.setFillColor(...(group.fill || palette.header));
+        const height = group.spanRows ? totalHeaderHeight : headerTopHeight;
+        doc.rect(x, y, groupWidth, height, "F");
+        doc.setTextColor(...palette.textDark);
+        const groupFontSize =
+          group.spanRows && groupWidth < 80 ? 7.4 : 8.5;
+        doc.setFontSize(groupFontSize);
+        if (group.spanRows && group.label.includes("\n")) {
+          const lines = group.label.split("\n");
+          const lineHeight = groupFontSize + 1.2;
+          const totalTextHeight = lineHeight * (lines.length - 1);
+          const startY = y + totalHeaderHeight / 2 - totalTextHeight / 2 + 3;
+          lines.forEach((line, index) => {
+            doc.text(line, x + groupWidth / 2, startY + index * lineHeight, {
+              align: "center",
+            });
+          });
+        } else {
+          const textY = group.spanRows ? y + totalHeaderHeight / 2 + 3 : y + 11;
+          doc.text(group.label, x + groupWidth / 2, textY, { align: "center" });
+        }
+        x += groupWidth;
+      });
+
+      let subX = marginX;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.2);
+      headerGroups.forEach((group) => {
+        const groupWidth = group.keys.reduce((sum, key) => sum + columnByKey[key].width, 0);
+        if (group.spanRows) {
+          subX += groupWidth;
+          return;
+        }
+
+        group.keys.forEach((key) => {
+          const col = columnByKey[key];
+          doc.setFillColor(...(group.fill || palette.header));
+          doc.rect(subX, y + headerTopHeight, col.width, headerBottomHeight, "F");
+          doc.setTextColor(...palette.textMuted);
+          doc.text(col.label, subX + col.width / 2, y + headerTopHeight + 12, {
+            align: "center",
+          });
+          subX += col.width;
+        });
+      });
+
+      doc.setDrawColor(...palette.border);
+      doc.setLineWidth(0.5);
+      columnPositions.forEach((col) => {
+        doc.line(col.x, y, col.x, y + totalHeaderHeight);
+      });
+      doc.line(marginX + tableWidth, y, marginX + tableWidth, y + totalHeaderHeight);
+
+      doc.setDrawColor(...palette.border);
+      doc.line(marginX, y + totalHeaderHeight, marginX + tableWidth, y + totalHeaderHeight);
+      doc.setFont("helvetica", "normal");
+      y += totalHeaderHeight;
+    };
+
+    const formatValue = (value) => {
+      if (value === null || value === undefined) return "";
+      if (typeof value === "number") return String(value);
+      return String(value);
+    };
+
+    const renderRow = (row, rowIndex) => {
+      const rowValues = [
+        row.fecha || "",
+        row.hora || "",
+        formatValue(row.cruda?.ph),
+        formatValue(row.cruda?.conductividad),
+        formatValue(row.cruda?.turbidez),
+        formatValue(row.decantada?.ph),
+        formatValue(row.decantada?.conductividad),
+        formatValue(row.decantada?.turbidez),
+        formatValue(row.tratada?.ph),
+        formatValue(row.tratada?.conductividad),
+        formatValue(row.tratada?.turbidez),
+        formatValue(row.tratada?.cloro),
+        truncateText(row.punto_muestreo, 18),
+        truncateText(row.encargado, 14),
+        truncateText(row.observaciones ?? "", 32),
+      ];
+
+      if (rowIndex % 2 === 1) {
+        doc.setFillColor(...palette.rowAlt);
+        doc.rect(marginX, y, tableWidth, rowHeight, "F");
+      }
+
+      doc.setFontSize(8);
+      doc.setTextColor(...palette.textDark);
+      rowValues.forEach((value, index) => {
+        const col = columnPositions[index];
+        drawCellText(value ?? "", col, y + 12);
+      });
+      doc.setDrawColor(...palette.border);
+      doc.setLineWidth(0.5);
+      columnPositions.forEach((col) => {
+        doc.line(col.x, y, col.x, y + rowHeight);
+      });
+      doc.line(marginX + tableWidth, y, marginX + tableWidth, y + rowHeight);
+      doc.setDrawColor(...palette.border);
+      doc.line(marginX, y + rowHeight, marginX + tableWidth, y + rowHeight);
+      y += rowHeight;
+    };
+
+    renderHeader();
+
+    rows.forEach((row, index) => {
+      if (y + rowHeight > pageHeight - marginBottom) {
+        doc.addPage();
+        y = marginTop;
+        doc.setFillColor(...palette.primarySoft);
+        doc.rect(marginX, y, tableWidth, headerHeight, "F");
+        doc.setFillColor(...palette.primary);
+        doc.rect(marginX, y, tableWidth, 3, "F");
+        const pageTextStartX = logoUrl ? marginX + 12 + logoSize + 8 : marginX + 12;
+        if (logoUrl) {
+          try {
+            doc.addImage(logoUrl, "PNG", marginX + 12, y + 12, logoSize, logoSize);
+          } catch (err) {
+            // ignore logo render errors
+          }
+        }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.setTextColor(...palette.textDark);
+        doc.text("Reporte semanal de registros", pageTextStartX, y + 26);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(...palette.textMuted);
+        doc.text(
+          `Semana: ${formatDateDMY(range.start)} al ${formatDateDMY(range.end)}`,
+          pageTextStartX,
+          y + 44
+        );
+        y += headerHeight + 14;
+        renderHeader();
+      }
+      renderRow(row, index);
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let page = 1; page <= totalPages; page += 1) {
+      doc.setPage(page);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...palette.textMuted);
+      doc.text("Control de Agua Potable", marginX, pageHeight - 16);
+      doc.text(`Pagina ${page} de ${totalPages}`, marginX + tableWidth, pageHeight - 16, {
+        align: "right",
+      });
+    }
+
+    return doc;
+  };
+
+  const handleDownloadWeeklyPdf = async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const online = await getOnlineStatus();
+      if (!online) {
+        showPdfNotice("warning", "Conectate a internet para descargar el PDF semanal.");
+        return;
+      }
+
+      await syncNow({ user });
+      const data = await getRegistros({ user });
+      const range = getWeekRange(new Date());
+      const weekRows = (data || []).filter((row) => {
+        const date = parseLocalDate(row.fecha);
+        if (!date) return false;
+        return date >= range.start && date <= range.end;
+      });
+
+      if (!weekRows.length) {
+        showPdfNotice("info", "No hay registros para la semana actual.");
+        return;
+      }
+
+      const doc = buildWeeklyPdf(weekRows, range, logoDataUrl);
+      const filename = `reporte_semanal_${formatDateYMD(range.start)}_al_${formatDateYMD(
+        range.end
+      )}.pdf`;
+
+      if (Capacitor.isNativePlatform()) {
+        const dataUri = doc.output("datauristring");
+        const base64 = dataUri.split(",")[1] || "";
+        const folder = "PTAP_CATV/reportes";
+
+        if (Capacitor.getPlatform() === "android") {
+          try {
+            const permission = await Filesystem.requestPermissions();
+            const values = Object.values(permission || {});
+            const granted =
+              values.length === 0 ||
+              values.some((value) => value === "granted" || value === "limited");
+            if (!granted) {
+              showPdfNotice(
+                "warning",
+                "Permiso de almacenamiento denegado. Actívalo para guardar el PDF en Archivos."
+              );
+              return;
+            }
+          } catch (err) {
+            showPdfNotice(
+              "warning",
+              "No se pudo solicitar permiso de almacenamiento. Revisa los permisos de la app."
+            );
+            return;
+          }
+        }
+
+        try {
+          await Filesystem.writeFile({
+            path: `${folder}/${filename}`,
+            data: base64,
+            directory: Directory.Documents,
+            recursive: true,
+          });
+          showPdfNotice("success", `PDF guardado en Documentos/${folder}/${filename}`);
+        } catch (err) {
+          try {
+            await Filesystem.writeFile({
+              path: `${folder}/${filename}`,
+              data: base64,
+              directory: Directory.Data,
+              recursive: true,
+            });
+            showPdfNotice(
+              "warning",
+              "No se pudo guardar en Archivos. El PDF quedó dentro de la app."
+            );
+          } catch (innerErr) {
+            showPdfNotice("error", "No se pudo guardar el PDF en el teléfono.");
+          }
+        }
+      } else {
+        const blob = doc.output("blob");
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        showPdfNotice("success", "PDF descargado.");
+      }
+    } catch (err) {
+      showPdfNotice("error", "No se pudo generar el PDF semanal.");
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   const handleEditSave = async () => {
@@ -209,7 +729,10 @@ export default function TableControl() {
         return;
       }
 
-      await updateRegistro(editingRecord, payloadEditable, payloadFull);
+      const synced = await updateRegistro(editingRecord, payloadEditable, payloadFull, { user });
+      if (synced === false) {
+        setOfflineNoticeOpen(true);
+      }
 
       await refreshRegistros();
       closeEdit();
@@ -221,12 +744,113 @@ export default function TableControl() {
   };
 
   useEffect(() => {
-    initOffline().catch(() => {});
-    refreshRegistros().catch((err) => console.log(err));
-  }, []);
+    let isMounted = true;
+    let cleanupSync = () => {};
+    let cleanupNetwork = () => {};
+
+    const boot = async () => {
+      try {
+        const cleanup = await initOffline({ user });
+        cleanupSync = typeof cleanup === "function" ? cleanup : () => {};
+      } catch (err) {
+        cleanupSync = () => {};
+      }
+
+      try {
+        const online = await getOnlineStatus();
+        if (isMounted) {
+          setIsOnline(online);
+        }
+      } catch (err) {
+        // ignore
+      }
+
+      cleanupNetwork = onNetworkStatusChange((status) => {
+        if (!isMounted) return;
+        setIsOnline(status);
+        if (status) {
+          refreshRegistros().catch(() => {});
+        }
+      });
+
+      refreshRegistros().catch((err) => console.log(err));
+    };
+
+    boot();
+
+    return () => {
+      isMounted = false;
+      cleanupSync?.();
+      cleanupNetwork?.();
+    };
+  }, [user?.username, user?.role]);
+
+  useEffect(() => {
+    if (pendingCount > 0) {
+      setOfflineNoticeOpen(true);
+      return;
+    }
+    setOfflineNoticeOpen(false);
+  }, [pendingCount]);
+
+  useEffect(() => {
+    const prev = pendingCountRef.current;
+    if (isOnline && prev > 0 && pendingCount < prev) {
+      const sent = prev - pendingCount;
+      const message =
+        pendingCount === 0
+          ? sent === 1
+            ? "Registro enviado correctamente."
+            : `Se enviaron ${sent} registros correctamente.`
+          : `Se enviaron ${sent} registro${sent === 1 ? "" : "s"}. Quedan ${pendingCount} pendiente${
+              pendingCount === 1 ? "" : "s"
+            }.`;
+      setSyncNotice({ open: true, message, severity: "success" });
+    }
+    pendingCountRef.current = pendingCount;
+  }, [isOnline, pendingCount]);
+
+  useEffect(() => {
+    let active = true;
+    const loadLogo = async () => {
+      if (!logoSrc) {
+        setLogoDataUrl("");
+        return;
+      }
+      if (String(logoSrc).startsWith("data:")) {
+        setLogoDataUrl(logoSrc);
+        return;
+      }
+      try {
+        const response = await fetch(logoSrc);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (!active) return;
+          if (typeof reader.result === "string") {
+            setLogoDataUrl(reader.result);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        if (active) {
+          setLogoDataUrl("");
+        }
+      }
+    };
+
+    loadLogo();
+    return () => {
+      active = false;
+    };
+  }, [logoSrc]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submitting || submitGuardRef.current) {
+      return;
+    }
+    submitGuardRef.current = true;
     setError("");
     setErrorDetail("");
     setSubmitting(true);
@@ -273,7 +897,10 @@ export default function TableControl() {
         return;
       }
 
-      await createRegistro(payload);
+      const created = await createRegistro(payload, { user });
+      if (created?._syncStatus === "pending") {
+        setOfflineNoticeOpen(true);
+      }
 
       setPuntoMuestreo("");
       setCruda({ ph: "", conductividad: "", turbidez: "" });
@@ -288,6 +915,7 @@ export default function TableControl() {
       setErrorDetail(buildErrorDetail(err));
     } finally {
       setSubmitting(false);
+      submitGuardRef.current = false;
     }
   };
 
@@ -299,6 +927,41 @@ export default function TableControl() {
         alignItems: "stretch",
       }}
     >
+      {!isOnline && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 1.5, sm: 2 },
+            borderRadius: 2,
+            border: "1px solid rgba(248, 113, 113, 0.35)",
+            background: "linear-gradient(120deg, #fff7ed 0%, #fff1f2 100%)",
+            boxShadow: "0 10px 24px rgba(248, 113, 113, 0.15)",
+          }}
+        >
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1.5}
+            alignItems={{ xs: "flex-start", sm: "center" }}
+            justifyContent="space-between"
+          >
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#9a3412" }}>
+                Sin conexion
+              </Typography>
+              <Typography variant="body2" sx={{ color: "#9a3412" }}>
+                Los registros se guardan localmente y se enviaran automaticamente al volver el internet.
+              </Typography>
+            </Box>
+            {pendingCount > 0 && (
+              <Chip
+                label={`${pendingCount} pendiente${pendingCount === 1 ? "" : "s"}`}
+                size="small"
+                sx={{ backgroundColor: "#fed7aa", color: "#9a3412", fontWeight: 600 }}
+              />
+            )}
+          </Stack>
+        </Paper>
+      )}
       <Paper
         elevation={0}
         sx={{
@@ -675,18 +1338,33 @@ export default function TableControl() {
               flexDirection: { xs: "column", sm: "row" },
               alignItems: { xs: "stretch", sm: "center" },
               justifyContent: "space-between",
-              gap: 1,
+              gap: 1.5,
             }}
           >
-            <Typography
-              variant="h6"
-              sx={{ fontWeight: 700, textAlign: { xs: "center", md: "left" } }}
+            <Box sx={{ textAlign: { xs: "center", md: "left" } }}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                Registros
+              </Typography>
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                Semana actual: {weekLabel}
+              </Typography>
+            </Box>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1}
+              alignItems={{ xs: "stretch", sm: "center" }}
             >
-              Registros
-            </Typography>
-            <Button variant="outlined" onClick={openSelectedEdit} disabled={!selectedRecord}>
-              Editar registro seleccionado
-            </Button>
+              <Button
+                variant="contained"
+                onClick={handleDownloadWeeklyPdf}
+                disabled={pdfBusy}
+              >
+                {pdfBusy ? "Generando PDF..." : "Descargar PDF semanal"}
+              </Button>
+              <Button variant="outlined" onClick={openSelectedEdit} disabled={!selectedRecord}>
+                Editar registro seleccionado
+              </Button>
+            </Stack>
           </Box>
         </Box>
 
@@ -1501,11 +2179,53 @@ export default function TableControl() {
           </Button>
         </DialogActions>
       </Dialog>
+      <Snackbar
+        open={offlineNoticeOpen}
+        onClose={() => setOfflineNoticeOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={pendingNoticeSeverity}
+          variant="filled"
+          onClose={() => setOfflineNoticeOpen(false)}
+          sx={{ width: "100%" }}
+        >
+          {pendingNoticeMessage}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={syncNotice.open}
+        autoHideDuration={7000}
+        onClose={() => setSyncNotice((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={syncNotice.severity}
+          variant="filled"
+          onClose={() => setSyncNotice((prev) => ({ ...prev, open: false }))}
+          sx={{ width: "100%" }}
+        >
+          {syncNotice.message}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={pdfNotice.open}
+        autoHideDuration={7000}
+        onClose={() => setPdfNotice((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={pdfNotice.severity}
+          variant="filled"
+          onClose={() => setPdfNotice((prev) => ({ ...prev, open: false }))}
+          sx={{ width: "100%" }}
+        >
+          {pdfNotice.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
-
-
 
 
 

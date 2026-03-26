@@ -1,0 +1,8 @@
+node_modules
+dist
+dist_apk
+android
+.git
+.env
+npm-debug.log
+yarn-error.log

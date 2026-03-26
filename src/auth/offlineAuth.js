@@ -94,7 +94,15 @@ export async function upsertOfflineUser(user, password, token) {
   const users = loadUsers();
   const entry = {
     username,
-    user: { id: user.id, username: user.username, role: user.role },
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      sociedad_id: user.sociedad_id ?? user.sociedadId ?? user.sociedad?.id ?? null,
+      sociedad_nombre: user.sociedad_nombre ?? user.sociedadNombre ?? user.sociedad?.nombre ?? null,
+      sociedad_logo_url:
+        user.sociedad_logo_url ?? user.sociedadLogoUrl ?? user.sociedad?.logo_url ?? null,
+    },
     salt,
     iterations,
     hash,

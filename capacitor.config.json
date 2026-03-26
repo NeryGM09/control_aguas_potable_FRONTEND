@@ -1,6 +1,6 @@
 {
   "appId": "com.controlaguas.app",
-  "appName": "Control de Aguas",
+  "appName": "PTAP CATV",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
