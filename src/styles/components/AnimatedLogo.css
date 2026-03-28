@@ -1,0 +1,125 @@
+.animated-logo {
+  width: var(--logo-width, 220px);
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 600px) {
+  .animated-logo {
+    width: var(--logo-width-sm, var(--logo-width, 220px));
+  }
+}
+
+.animated-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.animated-logo .logo-float {
+  animation: logo-float 6s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.animated-logo .logo-cane {
+  animation: logo-cane-sway 7s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.animated-logo .logo-lake {
+  animation: logo-lake-pulse 5.4s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.animated-logo .logo-ripple {
+  animation: logo-ripple-pulse 3.2s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.animated-logo .ripple-2 {
+  animation-delay: 0.35s;
+}
+
+.animated-logo .ripple-3 {
+  animation-delay: 0.7s;
+}
+
+.animated-logo .logo-shimmer {
+  animation: logo-shimmer-move 4.8s ease-in-out infinite alternate;
+}
+
+.animated-logo .logo-text {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+
+@keyframes logo-float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes logo-cane-sway {
+  0%,
+  100% {
+    transform: rotate(-1.2deg);
+  }
+  50% {
+    transform: rotate(1.4deg);
+  }
+}
+
+@keyframes logo-lake-pulse {
+  0%,
+  100% {
+    transform: scale(0.99);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+}
+
+@keyframes logo-ripple-pulse {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.98);
+  }
+  55% {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 0.6;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes logo-shimmer-move {
+  0% {
+    transform: translateX(-6px);
+  }
+  100% {
+    transform: translateX(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated-logo .logo-float,
+  .animated-logo .logo-cane,
+  .animated-logo .logo-lake,
+  .animated-logo .logo-ripple,
+  .animated-logo .logo-shimmer {
+    animation: none;
+  }
+}

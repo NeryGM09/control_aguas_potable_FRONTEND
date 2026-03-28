@@ -1,0 +1,16 @@
+.server-config {
+  margin-top: 16px;
+}
+
+.server-config-toggle.MuiButton-root {
+  text-transform: none;
+  font-weight: 600;
+}
+
+.server-config-panel {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.8);
+}

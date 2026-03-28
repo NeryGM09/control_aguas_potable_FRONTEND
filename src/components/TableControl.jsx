@@ -12,6 +12,7 @@ import {
 import { Capacitor } from "@capacitor/core";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { jsPDF } from "jspdf";
+import * as XLSX from "xlsx";
 import { getSociedadLogoSrc } from "../utils/sociedadLogo";
 import {
   Alert,
@@ -37,6 +38,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { useAuth } from "../auth/AuthContext";
+import "../styles/components/TableControl.css";
 
 const parseNumber = (value) => {
   if (value === null || value === undefined) return Number.NaN;
@@ -116,6 +118,7 @@ export default function TableControl() {
   const { user } = useAuth();
   const theme = useTheme();
   const [controles, setControles] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
@@ -133,6 +136,12 @@ export default function TableControl() {
   const [offlineNoticeOpen, setOfflineNoticeOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfNotice, setPdfNotice] = useState({ open: false, message: "", severity: "info" });
+  const [excelBusy, setExcelBusy] = useState(false);
+  const [excelNotice, setExcelNotice] = useState({
+    open: false,
+    message: "",
+    severity: "info",
+  });
   const [syncNotice, setSyncNotice] = useState({ open: false, message: "", severity: "success" });
   const [logoDataUrl, setLogoDataUrl] = useState("");
 
@@ -152,11 +161,6 @@ export default function TableControl() {
   const currentWeek = getWeekRange(new Date());
   const weekLabel = `${formatDateDMY(currentWeek.start)} al ${formatDateDMY(currentWeek.end)}`;
 
-  const categoryColors = {
-    cruda: { bg: "#DFF3E6", border: "#34A56F", text: "#0B5134" },
-    decantada: { bg: "#FFF0C2", border: "#E0A100", text: "#7A4E00" },
-    tratada: { bg: "#DDEBFF", border: "#3B82F6", text: "#0B3B6E" },
-  };
 
   const getTratadaIndicatorColor = (value, { min, max, lt } = {}) => {
     if (value === null || value === undefined || value === "") return "inherit";
@@ -178,6 +182,7 @@ export default function TableControl() {
     [controles]
   );
   const pendingCountRef = useRef(pendingCount);
+  const loadingCountRef = useRef(0);
   const submitGuardRef = useRef(false);
   const pendingNoticeSeverity = isOnline ? "info" : "warning";
   const pendingNoticeMessage = useMemo(() => {
@@ -285,12 +290,35 @@ export default function TableControl() {
   };
 
   const refreshRegistros = async () => {
-    const data = await getRegistros({ user });
-    setControles(data);
+    loadingCountRef.current += 1;
+    setIsLoading(true);
+    try {
+      const data = await getRegistros({ user });
+      setControles(data);
+    } finally {
+      loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
+      if (loadingCountRef.current === 0) {
+        setIsLoading(false);
+      }
+    }
   };
 
   const showPdfNotice = (severity, message) => {
     setPdfNotice({ open: true, severity, message });
+  };
+
+  const showExcelNotice = (severity, message) => {
+    setExcelNotice({ open: true, severity, message });
+  };
+
+  const getWeekRowsFromSource = (rows = [], range = getWeekRange(new Date())) => {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const weekRows = safeRows.filter((row) => {
+      const date = parseLocalDate(row.fecha);
+      if (!date) return false;
+      return date >= range.start && date <= range.end;
+    });
+    return { range, weekRows };
   };
 
   const buildWeeklyPdf = (rows, range, logoUrl) => {
@@ -605,24 +633,100 @@ export default function TableControl() {
     return doc;
   };
 
+  const buildWeeklyExcelWorkbook = (rows = []) => {
+    const toExcelValue = (value) => {
+      if (value === null || value === undefined || value === "") return "";
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      const text = String(value).trim();
+      if (!text) return "";
+      const normalized = text.replace(",", ".");
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : text;
+    };
+
+    const header = [
+      "Fecha",
+      "Hora",
+      "Cruda pH",
+      "Cruda Conductividad (uS/cm2)",
+      "Cruda Turbidez (NTU)",
+      "Decantada pH",
+      "Decantada Conductividad (uS/cm2)",
+      "Decantada Turbidez (NTU)",
+      "Tratada pH",
+      "Tratada Conductividad (uS/cm2)",
+      "Tratada Turbidez (NTU)",
+      "Tratada Cloro (ppm)",
+      "Punto muestreado",
+      "Encargado",
+      "Observaciones",
+    ];
+
+    const dataRows = rows.map((row) => [
+      row.fecha || "",
+      row.hora || "",
+      toExcelValue(row.cruda?.ph),
+      toExcelValue(row.cruda?.conductividad),
+      toExcelValue(row.cruda?.turbidez),
+      toExcelValue(row.decantada?.ph),
+      toExcelValue(row.decantada?.conductividad),
+      toExcelValue(row.decantada?.turbidez),
+      toExcelValue(row.tratada?.ph),
+      toExcelValue(row.tratada?.conductividad),
+      toExcelValue(row.tratada?.turbidez),
+      toExcelValue(row.tratada?.cloro),
+      row.punto_muestreo || "",
+      row.encargado || "",
+      row.observaciones ?? "",
+    ]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+    worksheet["!cols"] = [
+      { wch: 12 },
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 26 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 26 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 40 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Semana");
+    return workbook;
+  };
+
   const handleDownloadWeeklyPdf = async () => {
     if (pdfBusy) return;
+    if (excelBusy) {
+      showPdfNotice("info", "Espera a que termine la descarga del Excel.");
+      return;
+    }
     setPdfBusy(true);
     try {
-      const online = await getOnlineStatus();
-      if (!online) {
-        showPdfNotice("warning", "Conectate a internet para descargar el PDF semanal.");
-        return;
+      const range = getWeekRange(new Date());
+      let sourceRows = controles;
+
+      if (!sourceRows.length) {
+        const online = await getOnlineStatus();
+        if (!online) {
+          showPdfNotice("warning", "Conectate a internet para descargar el PDF semanal.");
+          return;
+        }
+
+        await syncNow({ user });
+        sourceRows = await getRegistros({ user });
       }
 
-      await syncNow({ user });
-      const data = await getRegistros({ user });
-      const range = getWeekRange(new Date());
-      const weekRows = (data || []).filter((row) => {
-        const date = parseLocalDate(row.fecha);
-        if (!date) return false;
-        return date >= range.start && date <= range.end;
-      });
+      const { weekRows } = getWeekRowsFromSource(sourceRows, range);
 
       if (!weekRows.length) {
         showPdfNotice("info", "No hay registros para la semana actual.");
@@ -692,14 +796,125 @@ export default function TableControl() {
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = filename;
+        anchor.rel = "noopener";
+        document.body.appendChild(anchor);
         anchor.click();
-        URL.revokeObjectURL(url);
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
         showPdfNotice("success", "PDF descargado.");
       }
     } catch (err) {
       showPdfNotice("error", "No se pudo generar el PDF semanal.");
     } finally {
       setPdfBusy(false);
+    }
+  };
+
+  const handleDownloadWeeklyExcel = async () => {
+    if (excelBusy) return;
+    if (pdfBusy) {
+      showExcelNotice("info", "Espera a que termine la descarga del PDF.");
+      return;
+    }
+    setExcelBusy(true);
+    try {
+      const range = getWeekRange(new Date());
+      let sourceRows = controles;
+
+      if (!sourceRows.length) {
+        const online = await getOnlineStatus();
+        if (!online) {
+          showExcelNotice("warning", "Conectate a internet para descargar el Excel semanal.");
+          return;
+        }
+
+        await syncNow({ user });
+        sourceRows = await getRegistros({ user });
+      }
+
+      const { weekRows } = getWeekRowsFromSource(sourceRows, range);
+
+      if (!weekRows.length) {
+        showExcelNotice("info", "No hay registros para la semana actual.");
+        return;
+      }
+
+      const workbook = buildWeeklyExcelWorkbook(weekRows);
+      const filename = `reporte_semanal_${formatDateYMD(range.start)}_al_${formatDateYMD(
+        range.end
+      )}.xlsx`;
+
+      if (Capacitor.isNativePlatform()) {
+        if (Capacitor.getPlatform() === "android") {
+          try {
+            const permission = await Filesystem.requestPermissions();
+            const values = Object.values(permission || {});
+            const granted =
+              values.length === 0 ||
+              values.some((value) => value === "granted" || value === "limited");
+            if (!granted) {
+              showExcelNotice(
+                "warning",
+                "Permiso de almacenamiento denegado. Actívalo para guardar el Excel en Archivos."
+              );
+              return;
+            }
+          } catch (err) {
+            showExcelNotice(
+              "warning",
+              "No se pudo solicitar permiso de almacenamiento. Revisa los permisos de la app."
+            );
+            return;
+          }
+        }
+
+        const base64 = XLSX.write(workbook, { bookType: "xlsx", type: "base64" });
+        const folder = "PTAP_CATV/reportes";
+
+        try {
+          await Filesystem.writeFile({
+            path: `${folder}/${filename}`,
+            data: base64,
+            directory: Directory.Documents,
+            recursive: true,
+          });
+          showExcelNotice("success", `Excel guardado en Documentos/${folder}/${filename}`);
+        } catch (err) {
+          try {
+            await Filesystem.writeFile({
+              path: `${folder}/${filename}`,
+              data: base64,
+              directory: Directory.Data,
+              recursive: true,
+            });
+            showExcelNotice(
+              "warning",
+              "No se pudo guardar en Archivos. El Excel quedó dentro de la app."
+            );
+          } catch (innerErr) {
+            showExcelNotice("error", "No se pudo guardar el Excel en el teléfono.");
+          }
+        }
+      } else {
+        const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.rel = "noopener";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        showExcelNotice("success", "Excel descargado.");
+      }
+    } catch (err) {
+      showExcelNotice("error", "No se pudo generar el Excel semanal.");
+    } finally {
+      setExcelBusy(false);
     }
   };
 
@@ -920,35 +1135,15 @@ export default function TableControl() {
   };
 
   return (
-    <Box
-      sx={{
-        display: "grid",
-        gap: { xs: 3, md: 4 },
-        alignItems: "stretch",
-      }}
-    >
+    <Box className={`tc-root ${isLoading ? "is-loading" : ""}`}>
       {!isOnline && (
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 1.5, sm: 2 },
-            borderRadius: 2,
-            border: "1px solid rgba(248, 113, 113, 0.35)",
-            background: "linear-gradient(120deg, #fff7ed 0%, #fff1f2 100%)",
-            boxShadow: "0 10px 24px rgba(248, 113, 113, 0.15)",
-          }}
-        >
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={1.5}
-            alignItems={{ xs: "flex-start", sm: "center" }}
-            justifyContent="space-between"
-          >
+        <Paper elevation={0} className="tc-offline-card">
+          <Box className="tc-offline-row">
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#9a3412" }}>
+              <Typography variant="subtitle1" className="tc-offline-title">
                 Sin conexion
               </Typography>
-              <Typography variant="body2" sx={{ color: "#9a3412" }}>
+              <Typography variant="body2" className="tc-offline-text">
                 Los registros se guardan localmente y se enviaran automaticamente al volver el internet.
               </Typography>
             </Box>
@@ -956,59 +1151,39 @@ export default function TableControl() {
               <Chip
                 label={`${pendingCount} pendiente${pendingCount === 1 ? "" : "s"}`}
                 size="small"
-                sx={{ backgroundColor: "#fed7aa", color: "#9a3412", fontWeight: 600 }}
+                className="tc-offline-chip"
               />
             )}
-          </Stack>
+          </Box>
         </Paper>
       )}
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 1.5, sm: 2, md: 3 },
-          borderRadius: 3,
-          border: "1px solid rgba(148, 163, 184, 0.3)",
-          boxShadow: "0 10px 24px rgba(30, 64, 175, 0.08)",
-          width: "100%",
-          background: "linear-gradient(180deg, #ffffff 0%, #f9fbff 100%)",
-        }}
-      >
-        <Stack spacing={0.5} alignItems="center">
-          <Box sx={{ textAlign: "center" }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "0.2px", color: "#0f172a" }}>
+      <Paper elevation={0} className="tc-form-card">
+        <Stack spacing={0.5} alignItems="center" className="tc-form-header">
+          <Box className="tc-form-heading">
+            <Typography variant="h6" className="tc-form-title">
               Nuevo registro
             </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            <Typography variant="body2" className="tc-form-subtitle">
               Completa los datos del muestreo
             </Typography>
           </Box>
           <Chip
             label={`Fecha ${fechaActual}`}
             size="small"
-            sx={{ display: { xs: "none", sm: "inline-flex" } }}
+            className="tc-form-datechip"
           />
         </Stack>
-        <Divider sx={{ my: 2 }} />
+        <Divider className="tc-section-divider" />
 
         <form onSubmit={handleSubmit}>
-          <Box
-            sx={{
-              display: "grid",
-              gap: 2,
-              gridTemplateColumns: { xs: "1fr 1fr", sm: "1fr 1fr" },
-              mb: 2,
-            }}
-          >
+          <Box className="tc-form-grid">
             <TextField
               label="Fecha"
               value={fechaActual}
               fullWidth
               disabled
               size="small"
-              sx={{
-                "& .MuiInputBase-input": { fontSize: { xs: 13.5, sm: 15 } },
-                "& .MuiInputLabel-root": { fontSize: { xs: 12, sm: 13 } },
-              }}
+              className="tc-compact-field"
             />
             <TextField
               label="Hora"
@@ -1016,19 +1191,16 @@ export default function TableControl() {
               fullWidth
               disabled
               size="small"
-              sx={{
-                "& .MuiInputBase-input": { fontSize: { xs: 13.5, sm: 15 } },
-                "& .MuiInputLabel-root": { fontSize: { xs: 12, sm: 13 } },
-              }}
+              className="tc-compact-field"
             />
-            <Box sx={{ display: { xs: "none", sm: "block" } }} />
-            <Box sx={{ display: { xs: "none", sm: "block" } }} />
+            <Box className="tc-form-spacer" />
+            <Box className="tc-form-spacer" />
             <TextField
               label="Punto de muestreo"
               value={puntoMuestreo}
               onChange={(e) => setPuntoMuestreo(e.target.value)}
               fullWidth
-              sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}
+              className="tc-field-span"
               required
               size="small"
             />
@@ -1041,27 +1213,18 @@ export default function TableControl() {
             />
           </Box>
 
-          <Box sx={{ display: "grid", gap: 2 }}>
+          <Box className="tc-section-grid">
             <Paper
               variant="outlined"
-              sx={{
-                p: { xs: 1.5, sm: 2 },
-                borderRadius: 2,
-                borderColor: "rgba(148, 163, 184, 0.35)",
-                backgroundColor: "rgba(255, 255, 255, 0.7)",
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-                boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-                borderTop: `3px solid ${categoryColors.cruda.border}`,
-              }}
+              className="tc-section-card tc-section-card--cruda"
             >
               <Typography
                 variant="subtitle1"
-                sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}
+                className="tc-section-title"
               >
                 Agua Cruda
               </Typography>
-              <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}>
+              <Box className="tc-metrics-grid tc-metrics-grid--3">
                 <TextField
                   label="pH"
                   type="number"
@@ -1094,24 +1257,15 @@ export default function TableControl() {
 
             <Paper
               variant="outlined"
-              sx={{
-                p: { xs: 1.5, sm: 2 },
-                borderRadius: 2,
-                borderColor: "rgba(148, 163, 184, 0.35)",
-                backgroundColor: "rgba(255, 255, 255, 0.7)",
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-                boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-                borderTop: `3px solid ${categoryColors.decantada.border}`,
-              }}
+              className="tc-section-card tc-section-card--decantada"
             >
               <Typography
                 variant="subtitle1"
-                sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}
+                className="tc-section-title"
               >
                 Agua Decantada
               </Typography>
-              <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}>
+              <Box className="tc-metrics-grid tc-metrics-grid--3">
                 <TextField
                   label="pH"
                   type="number"
@@ -1149,24 +1303,15 @@ export default function TableControl() {
 
             <Paper
               variant="outlined"
-              sx={{
-                p: { xs: 1.5, sm: 2 },
-                borderRadius: 2,
-                borderColor: "rgba(148, 163, 184, 0.35)",
-                backgroundColor: "rgba(255, 255, 255, 0.7)",
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-                boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-                borderTop: `3px solid ${categoryColors.tratada.border}`,
-              }}
+              className="tc-section-card tc-section-card--tratada"
             >
               <Typography
                 variant="subtitle1"
-                sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}
+                className="tc-section-title"
               >
                 Agua Tratada
               </Typography>
-              <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(4, 1fr)" } }}>
+              <Box className="tc-metrics-grid tc-metrics-grid--4">
                 <TextField
                   label="pH"
                   type="number"
@@ -1175,11 +1320,6 @@ export default function TableControl() {
                   fullWidth
                   required
                   size="small"
-                  sx={{
-                    "& .MuiInputBase-input": {
-                      color: getTratadaIndicatorColor(tratada.ph, { min: 7, max: 8 }),
-                    },
-                  }}
                   inputProps={{
                     style: {
                       color: getTratadaIndicatorColor(tratada.ph, { min: 7, max: 8 }),
@@ -1200,11 +1340,6 @@ export default function TableControl() {
                   fullWidth
                   required
                   size="small"
-                  sx={{
-                    "& .MuiInputBase-input": {
-                      color: getTratadaIndicatorColor(tratada.conductividad, { lt: 400 }),
-                    },
-                  }}
                   inputProps={{
                     style: {
                       color: getTratadaIndicatorColor(tratada.conductividad, { lt: 400 }),
@@ -1220,11 +1355,6 @@ export default function TableControl() {
                   fullWidth
                   required
                   size="small"
-                  sx={{
-                    "& .MuiInputBase-input": {
-                      color: getTratadaIndicatorColor(tratada.turbidez, { min: 0, max: 5 }),
-                    },
-                  }}
                   inputProps={{
                     style: {
                       color: getTratadaIndicatorColor(tratada.turbidez, { min: 0, max: 5 }),
@@ -1240,11 +1370,6 @@ export default function TableControl() {
                   fullWidth
                   required
                   size="small"
-                  sx={{
-                    "& .MuiInputBase-input": {
-                      color: getTratadaIndicatorColor(tratada.cloro, { min: 0.5, max: 1.5 }),
-                    },
-                  }}
                   inputProps={{
                     style: {
                       color: getTratadaIndicatorColor(tratada.cloro, { min: 0.5, max: 1.5 }),
@@ -1258,19 +1383,9 @@ export default function TableControl() {
 
           <Paper
             variant="outlined"
-            sx={{
-              p: { xs: 1.5, sm: 2 },
-              borderRadius: 2,
-              borderColor: "rgba(148, 163, 184, 0.35)",
-              backgroundColor: "rgba(255, 255, 255, 0.7)",
-              backdropFilter: "blur(10px)",
-              WebkitBackdropFilter: "blur(10px)",
-              boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-              borderTop: "3px solid rgba(148, 163, 184, 0.55)",
-              mt: 2,
-            }}
+            className="tc-section-card tc-section-card--neutral tc-observations-card"
           >
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}>
+            <Typography variant="subtitle1" className="tc-section-title">
               Observaciones
             </Typography>
             <TextField
@@ -1285,7 +1400,7 @@ export default function TableControl() {
           </Paper>
 
           {error && (
-            <Box sx={{ mt: 2 }}>
+            <Box className="tc-error-block">
               <Typography color="error" variant="body2">
                 {error}
               </Typography>
@@ -1297,12 +1412,13 @@ export default function TableControl() {
             </Box>
           )}
 
-          <Box sx={{ display: "flex", justifyContent: { xs: "stretch", sm: "flex-end" }, mt: 2 }}>
+          <Box className="tc-form-actions">
             <Button
               type="submit"
               variant="contained"
               disabled={submitting}
-              sx={{ width: { xs: "100%", sm: "auto" } }}
+              size="large"
+              className={`tc-primary-action tc-form-submit ${submitting ? "is-busy" : ""}`}
             >
               {submitting ? "Guardando..." : "Guardar registro"}
             </Button>
@@ -1310,292 +1426,182 @@ export default function TableControl() {
         </form>
       </Paper>
 
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2, md: 3 },
-          borderRadius: 3,
-          border: "1px solid rgba(148, 163, 184, 0.3)",
-          boxShadow: "0 10px 24px rgba(30, 64, 175, 0.08)",
-          width: "100%",
-          background: "linear-gradient(180deg, #ffffff 0%, #f9fbff 100%)",
-        }}
-      >
-        <Box
-          sx={{
-            position: { xs: "sticky", md: "static" },
-            top: { xs: 0, md: "auto" },
-            zIndex: 2,
-            backgroundColor: { xs: "#ffffff", md: "transparent" },
-            py: { xs: 1, md: 0 },
-            mb: { xs: 1, md: 2 },
-            borderBottom: { xs: "1px solid rgba(148, 163, 184, 0.3)", md: "none" },
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: { xs: "column", sm: "row" },
-              alignItems: { xs: "stretch", sm: "center" },
-              justifyContent: "space-between",
-              gap: 1.5,
-            }}
-          >
-            <Box sx={{ textAlign: { xs: "center", md: "left" } }}>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>
+      <Paper elevation={0} className="tc-list-card">
+        <Box className="tc-hero-wrapper">
+          <Box className="tc-hero-bar">
+            <Box>
+              <Typography variant="h6" className="tc-hero-title">
                 Registros
               </Typography>
-              <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Semana actual: {weekLabel}
+              <Typography variant="body2" className="tc-hero-subtitle">
+                Resumen semanal de muestreos
               </Typography>
             </Box>
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1}
-              alignItems={{ xs: "stretch", sm: "center" }}
-            >
-              <Button
-                variant="contained"
-                onClick={handleDownloadWeeklyPdf}
-                disabled={pdfBusy}
-              >
-                {pdfBusy ? "Generando PDF..." : "Descargar PDF semanal"}
-              </Button>
-              <Button variant="outlined" onClick={openSelectedEdit} disabled={!selectedRecord}>
-                Editar registro seleccionado
-              </Button>
-            </Stack>
+            <Chip
+              label={`Semana ${weekLabel}`}
+              size="small"
+              className="tc-hero-chip"
+            />
           </Box>
         </Box>
 
-        <Box sx={{ display: { xs: "block", md: "none" } }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1}
+          alignItems={{ xs: "stretch", sm: "center" }}
+          className="tc-actions"
+        >
+          <Button
+            variant="contained"
+            onClick={handleDownloadWeeklyPdf}
+            disabled={pdfBusy}
+            size="large"
+            className={`tc-primary-action ${pdfBusy ? "is-busy" : ""}`}
+          >
+            {pdfBusy ? "Generando PDF..." : "Descargar PDF semanal"}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleDownloadWeeklyExcel}
+            disabled={excelBusy}
+            size="large"
+            className={`tc-primary-action ${excelBusy ? "is-busy" : ""}`}
+          >
+            {excelBusy ? "Generando Excel..." : "Descargar Excel semanal"}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={openSelectedEdit}
+            disabled={!selectedRecord}
+            size="large"
+            className="tc-primary-action"
+          >
+            Editar registro seleccionado
+          </Button>
+        </Stack>
+
+        <Box className="tc-mobile-list">
           <Stack spacing={2}>
             {controles.map((control) => (
               <Paper
                 key={`card-${control.id}`}
                 variant="outlined"
                 onClick={() => setSelectedRecordId(control.id)}
-                sx={{
-                  p: { xs: 1.75, sm: 2 },
-                  cursor: "pointer",
-                  borderRadius: 2.5,
-                  border:
-                    selectedRecordId === control.id
-                      ? "1px solid rgba(37, 99, 235, 0.7)"
-                      : "1px solid rgba(148, 163, 184, 0.4)",
-                  backgroundColor: "rgba(255, 255, 255, 0.72)",
-                  backdropFilter: "blur(10px)",
-                  WebkitBackdropFilter: "blur(10px)",
-                  boxShadow:
-                    selectedRecordId === control.id
-                      ? "inset 4px 0 0 #2563eb, 0 10px 24px rgba(37, 99, 235, 0.16)"
-                      : "0 8px 18px rgba(15, 23, 42, 0.08)",
-                  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                }}
+                className={`tc-card ${selectedRecordId === control.id ? "is-selected" : ""}`}
               >
                 <Stack spacing={1.25}>
-                  <Box sx={{ display: "grid", gap: 0.5, textAlign: "left" }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, letterSpacing: "0.2px", color: "#0f172a" }}>
+                  <Box className="tc-card-header">
+                    <Typography variant="subtitle2" className="tc-card-title">
                       {control.fecha} · {control.hora}
                     </Typography>
-                    <Box sx={{ display: "flex", justifyContent: "flex-start", gap: 1, flexWrap: "wrap" }}>
+                    <Box className="tc-card-chip-row">
                       <Chip
                         label={control.punto_muestreo}
                         size="small"
                         variant="outlined"
-                        sx={{ fontWeight: 600 }}
+                        className="tc-card-chip"
                       />
                       <Chip
                         label={`Encargado: ${control.encargado}`}
                         size="small"
                         variant="outlined"
-                        sx={{ fontWeight: 600 }}
+                        className="tc-card-chip"
                       />
                     </Box>
                   </Box>
-                  <Divider sx={{ borderColor: "rgba(148, 163, 184, 0.3)" }} />
-                  <Box sx={{ display: "grid", gap: 1 }}>
-                    <Box
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 1.75,
-                        background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-                        border: "1px solid rgba(148, 163, 184, 0.35)",
-                        borderTop: `3px solid ${categoryColors.cruda.border}`,
-                      }}
-                    >
+                  <Divider className="tc-card-divider" />
+                  <Box className="tc-card-sections">
+                    <Box className="tc-mobile-section tc-mobile-section--cruda">
                       <Typography
                         variant="subtitle2"
-                        sx={{ fontWeight: 700, color: categoryColors.cruda.text, mb: 0.5 }}
+                        className="tc-mobile-section-title tc-mobile-section-title--cruda"
                       >
                         Agua Cruda
                       </Typography>
-                      <Box
-                        sx={{
-                          display: "grid",
-                          border: "1px solid rgba(148, 163, 184, 0.25)",
-                          borderRadius: 1,
-                          overflow: "hidden",
-                          backgroundColor: "#ffffff",
-                        }}
-                      >
+                      <Stack spacing={0} divider={<Divider className="tc-mobile-divider" />}>
                         {[
                           ["pH", control.cruda?.ph],
                           ["Conductividad", control.cruda?.conductividad],
                           ["Turbidez", control.cruda?.turbidez],
-                        ].map(([label, value], idx, arr) => (
+                        ].map(([label, value], idx) => (
                           <Box
                             key={`${label}-${idx}`}
-                            sx={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr auto",
-                              gap: 0.5,
-                              px: 1,
-                              py: 0.6,
-                              borderBottom:
-                                idx === arr.length - 1
-                                  ? "none"
-                                  : "1px solid rgba(148, 163, 184, 0.2)",
-                              fontSize: 13.25,
-                            }}
+                            className="tc-mobile-metric-row"
                           >
-                            <Typography variant="body2" sx={{ color: "#475569" }}>
+                            <Typography variant="body2" className="tc-mobile-metric-label">
                               {label}
                             </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>
+                            <Typography variant="body2" className="tc-mobile-metric-value">
                               {value}
                             </Typography>
                           </Box>
                         ))}
-                      </Box>
+                      </Stack>
                     </Box>
-                    <Box
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 1.75,
-                        background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-                        border: "1px solid rgba(148, 163, 184, 0.35)",
-                        borderTop: `3px solid ${categoryColors.decantada.border}`,
-                      }}
-                    >
+                    <Box className="tc-mobile-section tc-mobile-section--decantada">
                       <Typography
                         variant="subtitle2"
-                        sx={{ fontWeight: 700, color: categoryColors.decantada.text, mb: 0.5 }}
+                        className="tc-mobile-section-title tc-mobile-section-title--decantada"
                       >
                         Agua Decantada
                       </Typography>
-                      <Box
-                        sx={{
-                          display: "grid",
-                          border: "1px solid rgba(148, 163, 184, 0.25)",
-                          borderRadius: 1,
-                          overflow: "hidden",
-                          backgroundColor: "#ffffff",
-                        }}
-                      >
+                      <Stack spacing={0} divider={<Divider className="tc-mobile-divider" />}>
                         {[
                           ["pH", control.decantada?.ph],
                           ["Conductividad", control.decantada?.conductividad],
                           ["Turbidez", control.decantada?.turbidez],
-                        ].map(([label, value], idx, arr) => (
+                        ].map(([label, value], idx) => (
                           <Box
                             key={`${label}-${idx}`}
-                            sx={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr auto",
-                              gap: 0.5,
-                              px: 1,
-                              py: 0.6,
-                              borderBottom:
-                                idx === arr.length - 1
-                                  ? "none"
-                                  : "1px solid rgba(148, 163, 184, 0.2)",
-                              fontSize: 13.25,
-                            }}
+                            className="tc-mobile-metric-row"
                           >
-                            <Typography variant="body2" sx={{ color: "#475569" }}>
+                            <Typography variant="body2" className="tc-mobile-metric-label">
                               {label}
                             </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>
+                            <Typography variant="body2" className="tc-mobile-metric-value">
                               {value}
                             </Typography>
                           </Box>
                         ))}
-                      </Box>
+                      </Stack>
                     </Box>
-                    <Box
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 1.75,
-                        background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-                        border: "1px solid rgba(148, 163, 184, 0.35)",
-                        borderTop: `3px solid ${categoryColors.tratada.border}`,
-                      }}
-                    >
+                    <Box className="tc-mobile-section tc-mobile-section--tratada">
                       <Typography
                         variant="subtitle2"
-                        sx={{ fontWeight: 700, color: categoryColors.tratada.text, mb: 0.5 }}
+                        className="tc-mobile-section-title tc-mobile-section-title--tratada"
                       >
                         Agua Tratada
                       </Typography>
-                      <Box
-                        sx={{
-                          display: "grid",
-                          border: "1px solid rgba(148, 163, 184, 0.25)",
-                          borderRadius: 1,
-                          overflow: "hidden",
-                          backgroundColor: "#ffffff",
-                        }}
-                      >
+                      <Stack spacing={0} divider={<Divider className="tc-mobile-divider" />}>
                         {[
                           ["pH", control.tratada?.ph, { min: 7, max: 8 }],
                           ["Conductividad", control.tratada?.conductividad, { lt: 400 }],
                           ["Turbidez", control.tratada?.turbidez, { min: 0, max: 5 }],
                           ["Cloro", control.tratada?.cloro, { min: 0.5, max: 1.5 }],
-                        ].map(([label, value, range], idx, arr) => (
+                        ].map(([label, value, range], idx) => (
                           <Box
                             key={`${label}-${idx}`}
-                            sx={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr auto",
-                              gap: 0.5,
-                              px: 1,
-                              py: 0.6,
-                              borderBottom:
-                                idx === arr.length - 1
-                                  ? "none"
-                                  : "1px solid rgba(148, 163, 184, 0.2)",
-                              fontSize: 13.25,
-                            }}
+                            className="tc-mobile-metric-row"
                           >
-                            <Typography variant="body2" sx={{ color: "#475569" }}>
+                            <Typography variant="body2" className="tc-mobile-metric-label">
                               {label}
                             </Typography>
                             <Typography
                               variant="body2"
-                              sx={{
-                                fontWeight: 600,
-                                color: getTratadaIndicatorColor(value, range),
-                              }}
+                              className="tc-mobile-metric-value"
+                              style={{ color: getTratadaIndicatorColor(value, range) }}
                             >
                               {value}
                             </Typography>
                           </Box>
                         ))}
-                      </Box>
+                      </Stack>
                     </Box>
-                    <Box
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 1.75,
-                        backgroundColor: "rgba(255, 255, 255, 0.7)",
-                        border: "1px solid rgba(148, 163, 184, 0.3)",
-                      }}
-                    >
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, color: "#0f172a" }}>
+                    <Box className="tc-mobile-observations">
+                      <Typography variant="subtitle2" className="tc-mobile-observations-title">
                         Observaciones
                       </Typography>
-                      <Typography variant="body2" sx={{ color: "#0f172a", whiteSpace: "pre-wrap" }}>
+                      <Typography variant="body2" className="tc-mobile-observations-text">
                         {control.observaciones?.trim() || "Sin observaciones"}
                       </Typography>
                     </Box>
@@ -1606,119 +1612,71 @@ export default function TableControl() {
           </Stack>
         </Box>
 
-        <Box sx={{ display: { xs: "none", md: "block" } }}>
+        <Box className="tc-table-wrapper">
           <TableContainer
             component={Paper}
             variant="outlined"
-            sx={{
-              overflowX: "auto",
-              width: "100%",
-              borderRadius: 2.5,
-              border: "1px solid rgba(148, 163, 184, 0.45)",
-              background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-              boxShadow: "0 14px 30px rgba(15, 23, 42, 0.08)",
-            }}
+            className="tc-table-container"
           >
             <Table
               size="small"
-              sx={{
-                minWidth: 1120,
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                "& th, & td": {
-                  borderColor: "rgba(148, 163, 184, 0.4)",
-                  px: 1.5,
-                  py: 1,
-                },
-                "& th": {
-                  fontSize: 12.5,
-                  letterSpacing: "0.3px",
-                },
-                "& td": {
-                  fontSize: 13.5,
-                },
-              }}
+              className="tc-table"
             >
-              <TableHead
-                sx={{
-                  "& th": {
-                    fontWeight: 700,
-                    color: "#0f172a",
-                    borderBottom: "1px solid rgba(148, 163, 184, 0.55)",
-                  },
-                }}
-              >
+              <TableHead className="tc-table-head">
                 <TableRow>
                   <TableCell
                     rowSpan={2}
                     align="center"
-                    className="font-bold border"
-                    sx={{ backgroundColor: "#f8fafc" }}
+                    className="font-bold border tc-th--neutral"
                   >
                     Fecha
                   </TableCell>
                   <TableCell
                     rowSpan={2}
                     align="center"
-                    className="font-bold border"
-                    sx={{ backgroundColor: "#f8fafc" }}
+                    className="font-bold border tc-th--neutral"
                   >
                     Hora
                   </TableCell>
                   <TableCell
                     colSpan={3}
                     align="center"
-                    className="font-bold border"
-                    sx={{
-                      backgroundColor: categoryColors.cruda.bg,
-                      color: categoryColors.cruda.text,
-                    }}
+                    className="font-bold border tc-th--cruda"
                   >
                     Agua Cruda
                   </TableCell>
                   <TableCell
                     colSpan={3}
                     align="center"
-                    className="font-bold border"
-                    sx={{
-                      backgroundColor: categoryColors.decantada.bg,
-                      color: categoryColors.decantada.text,
-                    }}
+                    className="font-bold border tc-th--decantada"
                   >
                     Agua Decantada
                   </TableCell>
                   <TableCell
                     colSpan={4}
                     align="center"
-                    className="font-bold border"
-                    sx={{
-                      backgroundColor: categoryColors.tratada.bg,
-                      color: categoryColors.tratada.text,
-                    }}
+                    className="font-bold border tc-th--tratada"
                   >
                     Agua Tratada
                   </TableCell>
                   <TableCell
                     rowSpan={2}
                     align="center"
-                    className="font-bold border"
-                    sx={{ backgroundColor: "#f8fafc" }}
+                    className="font-bold border tc-th--neutral"
                   >
                     Punto muestreado
                   </TableCell>
                   <TableCell
                     rowSpan={2}
                     align="center"
-                    className="font-bold border"
-                    sx={{ backgroundColor: "#f8fafc" }}
+                    className="font-bold border tc-th--neutral"
                   >
                     Encargado de la Planta
                   </TableCell>
                   <TableCell
                     rowSpan={2}
                     align="center"
-                    className="font-bold border"
-                    sx={{ backgroundColor: "#f8fafc" }}
+                    className="font-bold border tc-th--neutral"
                   >
                     Observaciones
                   </TableCell>
@@ -1726,97 +1684,74 @@ export default function TableControl() {
                 <TableRow>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.cruda.bg }}
+                    className="border tc-th--cruda"
                   >
                     pH
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.cruda.bg }}
+                    className="border tc-th--cruda"
                   >
                     Conductividad (uS/cm2)
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.cruda.bg }}
+                    className="border tc-th--cruda"
                   >
                     Turbidez (NTU)
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.decantada.bg }}
+                    className="border tc-th--decantada"
                   >
                     pH
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.decantada.bg }}
+                    className="border tc-th--decantada"
                   >
                     Conductividad (uS/cm2)
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.decantada.bg }}
+                    className="border tc-th--decantada"
                   >
                     Turbidez (NTU)
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.tratada.bg }}
+                    className="border tc-th--tratada"
                   >
                     pH
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.tratada.bg }}
+                    className="border tc-th--tratada"
                   >
                     Conductividad (uS/cm2)
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.tratada.bg }}
+                    className="border tc-th--tratada"
                   >
                     Turbidez (NTU)
                   </TableCell>
                   <TableCell
                     align="center"
-                    className="border"
-                    sx={{ backgroundColor: categoryColors.tratada.bg }}
+                    className="border tc-th--tratada"
                   >
                     Cloro (ppm)
                   </TableCell>
                 </TableRow>
               </TableHead>
-              <TableBody
-                sx={{
-                  "& tr": { transition: "background-color 0.2s ease" },
-                  "& tr:nth-of-type(odd)": { backgroundColor: "#ffffff" },
-                  "& tr:nth-of-type(even)": { backgroundColor: "#f4f7fb" },
-                  "& tr:hover": { backgroundColor: "#eef2ff" },
-                  "& tr.Mui-selected": { backgroundColor: "#e0ebff" },
-                  "& tr.Mui-selected:hover": { backgroundColor: "#d6e4ff" },
-                  "& tr.Mui-selected td:first-of-type": {
-                    boxShadow: "inset 3px 0 0 #2563eb",
-                  },
-                  "& td": { color: "#0f172a" },
-                }}
-              >
+              <TableBody className="tc-table-body">
                 {controles.map((control) => (
                   <TableRow
                     key={`registro-${control.id}`}
                     hover
                     onClick={() => setSelectedRecordId(control.id)}
                     selected={selectedRecordId === control.id}
-                    sx={{ cursor: "pointer" }}
+                    className="tc-row"
                   >
                     <TableCell className="border">{control.fecha}</TableCell>
                     <TableCell className="border">{control.hora}</TableCell>
@@ -1835,7 +1770,7 @@ export default function TableControl() {
                 <TableCell className="border">
                   <Box
                     component="span"
-                    sx={{ color: getTratadaIndicatorColor(control.tratada?.ph, { min: 7, max: 8 }) }}
+                    style={{ color: getTratadaIndicatorColor(control.tratada?.ph, { min: 7, max: 8 }) }}
                   >
                     {control.tratada?.ph}
                   </Box>
@@ -1843,9 +1778,7 @@ export default function TableControl() {
                 <TableCell className="border">
                   <Box
                     component="span"
-                    sx={{
-                      color: getTratadaIndicatorColor(control.tratada?.conductividad, { lt: 400 }),
-                    }}
+                    style={{ color: getTratadaIndicatorColor(control.tratada?.conductividad, { lt: 400 }) }}
                   >
                     {control.tratada?.conductividad}
                   </Box>
@@ -1853,9 +1786,7 @@ export default function TableControl() {
                 <TableCell className="border">
                   <Box
                     component="span"
-                    sx={{
-                      color: getTratadaIndicatorColor(control.tratada?.turbidez, { min: 0, max: 5 }),
-                    }}
+                    style={{ color: getTratadaIndicatorColor(control.tratada?.turbidez, { min: 0, max: 5 }) }}
                   >
                     {control.tratada?.turbidez}
                   </Box>
@@ -1863,9 +1794,7 @@ export default function TableControl() {
                 <TableCell className="border">
                   <Box
                     component="span"
-                    sx={{
-                      color: getTratadaIndicatorColor(control.tratada?.cloro, { min: 0.5, max: 1.5 }),
-                    }}
+                    style={{ color: getTratadaIndicatorColor(control.tratada?.cloro, { min: 0.5, max: 1.5 }) }}
                   >
                     {control.tratada?.cloro}
                   </Box>
@@ -1873,8 +1802,7 @@ export default function TableControl() {
                 <TableCell className="border">{control.punto_muestreo}</TableCell>
                 <TableCell className="border">{control.encargado}</TableCell>
                 <TableCell
-                  className="border"
-                  sx={{ maxWidth: 240, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  className="border tc-cell-observations"
                 >
                   {control.observaciones || ""}
                 </TableCell>
@@ -1890,14 +1818,8 @@ export default function TableControl() {
         <DialogTitle>Editar registro</DialogTitle>
         <DialogContent dividers>
           {editingRecord && editValues && (
-            <Box sx={{ display: "grid", gap: 2 }}>
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                }}
-              >
+            <Box className="tc-edit-grid">
+              <Box className="tc-edit-form">
                 <TextField label="Fecha" value={editingRecord.fecha} fullWidth disabled size="small" />
                 <TextField label="Hora" value={editingRecord.hora} fullWidth disabled size="small" />
                 <TextField
@@ -1926,27 +1848,18 @@ export default function TableControl() {
                   multiline
                   minRows={3}
                   size="small"
-                  sx={{ gridColumn: { xs: "1 / -1", sm: "1 / -1" } }}
+                  className="tc-edit-span"
                 />
               </Box>
 
               <Paper
                 variant="outlined"
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  borderColor: "rgba(148, 163, 184, 0.35)",
-                  backgroundColor: "rgba(255, 255, 255, 0.7)",
-                  backdropFilter: "blur(10px)",
-                  WebkitBackdropFilter: "blur(10px)",
-                  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-                  borderTop: `3px solid ${categoryColors.cruda.border}`,
-                }}
+                className="tc-section-card tc-section-card--cruda"
               >
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}>
+                <Typography variant="subtitle1" className="tc-section-title">
                   Agua Cruda
                 </Typography>
-                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}>
+                <Box className="tc-metrics-grid tc-metrics-grid--3">
                   <TextField
                     label="pH"
                     type="number"
@@ -1991,21 +1904,12 @@ export default function TableControl() {
 
               <Paper
                 variant="outlined"
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  borderColor: "rgba(148, 163, 184, 0.35)",
-                  backgroundColor: "rgba(255, 255, 255, 0.7)",
-                  backdropFilter: "blur(10px)",
-                  WebkitBackdropFilter: "blur(10px)",
-                  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-                  borderTop: `3px solid ${categoryColors.decantada.border}`,
-                }}
+                className="tc-section-card tc-section-card--decantada"
               >
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}>
+                <Typography variant="subtitle1" className="tc-section-title">
                   Agua Decantada
                 </Typography>
-                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}>
+                <Box className="tc-metrics-grid tc-metrics-grid--3">
                   <TextField
                     label="pH"
                     type="number"
@@ -2050,21 +1954,12 @@ export default function TableControl() {
 
               <Paper
                 variant="outlined"
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  borderColor: "rgba(148, 163, 184, 0.35)",
-                  backgroundColor: "rgba(255, 255, 255, 0.7)",
-                  backdropFilter: "blur(10px)",
-                  WebkitBackdropFilter: "blur(10px)",
-                  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
-                  borderTop: `3px solid ${categoryColors.tratada.border}`,
-                }}
+                className="tc-section-card tc-section-card--tratada"
               >
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1, color: "#0f172a" }}>
+                <Typography variant="subtitle1" className="tc-section-title">
                   Agua Tratada
                 </Typography>
-                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(4, 1fr)" } }}>
+                <Box className="tc-metrics-grid tc-metrics-grid--4">
                   <TextField
                     label="pH"
                     type="number"
@@ -2077,11 +1972,6 @@ export default function TableControl() {
                     }
                     fullWidth
                     size="small"
-                    sx={{
-                      "& .MuiInputBase-input": {
-                        color: getTratadaIndicatorColor(editValues.tratada.ph, { min: 7, max: 8 }),
-                      },
-                    }}
                     inputProps={{
                       style: {
                         color: getTratadaIndicatorColor(editValues.tratada.ph, { min: 7, max: 8 }),
@@ -2101,11 +1991,6 @@ export default function TableControl() {
                     }
                     fullWidth
                     size="small"
-                    sx={{
-                      "& .MuiInputBase-input": {
-                        color: getTratadaIndicatorColor(editValues.tratada.conductividad, { lt: 400 }),
-                      },
-                    }}
                     inputProps={{
                       style: {
                         color: getTratadaIndicatorColor(editValues.tratada.conductividad, { lt: 400 }),
@@ -2125,11 +2010,6 @@ export default function TableControl() {
                     }
                     fullWidth
                     size="small"
-                    sx={{
-                      "& .MuiInputBase-input": {
-                        color: getTratadaIndicatorColor(editValues.tratada.turbidez, { min: 0, max: 5 }),
-                      },
-                    }}
                     inputProps={{
                       style: {
                         color: getTratadaIndicatorColor(editValues.tratada.turbidez, { min: 0, max: 5 }),
@@ -2149,11 +2029,6 @@ export default function TableControl() {
                     }
                     fullWidth
                     size="small"
-                    sx={{
-                      "& .MuiInputBase-input": {
-                        color: getTratadaIndicatorColor(editValues.tratada.cloro, { min: 0.5, max: 1.5 }),
-                      },
-                    }}
                     inputProps={{
                       style: {
                         color: getTratadaIndicatorColor(editValues.tratada.cloro, { min: 0.5, max: 1.5 }),
@@ -2173,8 +2048,15 @@ export default function TableControl() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeEdit}>Cancelar</Button>
-          <Button onClick={handleEditSave} variant="contained" disabled={editSubmitting}>
+          <Button onClick={closeEdit} variant="outlined" className="tc-tertiary-action">
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleEditSave}
+            variant="contained"
+            disabled={editSubmitting}
+            className={`tc-primary-action ${editSubmitting ? "is-busy" : ""}`}
+          >
             {editSubmitting ? "Guardando..." : "Guardar cambios"}
           </Button>
         </DialogActions>
@@ -2188,7 +2070,7 @@ export default function TableControl() {
           severity={pendingNoticeSeverity}
           variant="filled"
           onClose={() => setOfflineNoticeOpen(false)}
-          sx={{ width: "100%" }}
+          className="tc-snackbar-alert"
         >
           {pendingNoticeMessage}
         </Alert>
@@ -2203,7 +2085,7 @@ export default function TableControl() {
           severity={syncNotice.severity}
           variant="filled"
           onClose={() => setSyncNotice((prev) => ({ ...prev, open: false }))}
-          sx={{ width: "100%" }}
+          className="tc-snackbar-alert"
         >
           {syncNotice.message}
         </Alert>
@@ -2218,18 +2100,26 @@ export default function TableControl() {
           severity={pdfNotice.severity}
           variant="filled"
           onClose={() => setPdfNotice((prev) => ({ ...prev, open: false }))}
-          sx={{ width: "100%" }}
+          className="tc-snackbar-alert"
         >
           {pdfNotice.message}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={excelNotice.open}
+        autoHideDuration={7000}
+        onClose={() => setExcelNotice((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={excelNotice.severity}
+          variant="filled"
+          onClose={() => setExcelNotice((prev) => ({ ...prev, open: false }))}
+          className="tc-snackbar-alert"
+        >
+          {excelNotice.message}
         </Alert>
       </Snackbar>
     </Box>
   );
 }
-
-
-
-
-
-
-

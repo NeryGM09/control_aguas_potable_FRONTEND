@@ -1,8 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { CssBaseline, ThemeProvider } from "@mui/material";
 import "./index.css";
 import App from "./App.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
+import theme from "./theme.js";
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
   const perfFlag = "__codexMessagePerfPatched__";
@@ -58,8 +60,11 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

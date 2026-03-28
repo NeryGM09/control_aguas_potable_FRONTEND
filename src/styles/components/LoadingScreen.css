@@ -1,0 +1,46 @@
+.loading-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 0 24px;
+  background: radial-gradient(circle at 20% 10%, rgba(59, 130, 246, 0.16), transparent 45%),
+    radial-gradient(circle at 85% 20%, rgba(34, 197, 94, 0.16), transparent 50%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+@media (min-width: 900px) {
+  .loading-screen {
+    min-height: 100vh;
+  }
+}
+
+.loading-screen-card {
+  text-align: center;
+  display: grid;
+  gap: 12.8px;
+  justify-items: center;
+}
+
+.loading-screen-message.MuiTypography-root {
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.loading-screen-progress.MuiLinearProgress-root {
+  width: 160px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: rgba(37, 99, 235, 0.16);
+}
+
+.loading-screen-progress .MuiLinearProgress-bar {
+  background: linear-gradient(90deg, #2563eb 0%, #10b981 100%);
+}
+
+@media (min-width: 600px) {
+  .loading-screen-progress.MuiLinearProgress-root {
+    width: 220px;
+  }
+}

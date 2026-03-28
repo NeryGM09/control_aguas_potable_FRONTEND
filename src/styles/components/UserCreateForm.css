@@ -1,0 +1,178 @@
+.user-create-card.MuiPaper-root {
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1);
+  width: 100%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(240, 249, 255, 0.8) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+
+@media (min-width: 600px) {
+  .user-create-card.MuiPaper-root {
+    padding: 20px;
+  }
+}
+
+@media (min-width: 900px) {
+  .user-create-card.MuiPaper-root {
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+}
+
+.user-create-orb {
+  position: absolute;
+  top: -90px;
+  right: -120px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18), transparent 70%);
+  pointer-events: none;
+}
+
+.user-create-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.user-create-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-create-icon-box {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.2) 0%, rgba(16, 185, 129, 0.18) 100%);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+}
+
+.user-create-icon {
+  color: #1d4ed8;
+}
+
+.user-create-title.MuiTypography-root {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.user-create-subtitle.MuiTypography-root {
+  color: #64748b;
+}
+
+.user-create-close.MuiIconButton-root {
+  background-color: rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+}
+
+.user-create-close.MuiIconButton-root:hover {
+  background-color: rgba(37, 99, 235, 0.15);
+}
+
+.user-create-divider.MuiDivider-root {
+  margin: 16px 0;
+}
+
+.user-create-form {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 600px) {
+  .user-create-form {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.user-create-field .MuiOutlinedInput-root {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 16px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.user-create-field .MuiOutlinedInput-root fieldset {
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.user-create-field .MuiOutlinedInput-root:hover fieldset {
+  border-color: rgba(37, 99, 235, 0.6);
+}
+
+.user-create-field .MuiOutlinedInput-root.Mui-focused {
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.16);
+  transform: translateY(-1px);
+}
+
+.user-create-field .MuiOutlinedInput-root.Mui-focused fieldset {
+  border-color: #2563eb;
+}
+
+.user-create-field .MuiInputLabel-root {
+  color: #334155;
+  font-weight: 600;
+}
+
+.user-create-field .MuiInputLabel-root.Mui-focused {
+  color: #1d4ed8;
+}
+
+.user-create-alert.MuiAlert-root {
+  grid-column: 1 / -1;
+  border-radius: 16px;
+}
+
+.user-create-alert-title.MuiTypography-root {
+  font-weight: 600;
+}
+
+.user-create-alert-detail.MuiTypography-root {
+  opacity: 0.9;
+}
+
+.user-create-actions {
+  display: flex;
+  justify-content: stretch;
+}
+
+@media (min-width: 600px) {
+  .user-create-actions {
+    justify-content: flex-end;
+  }
+}
+
+.user-create-submit.MuiButton-root {
+  width: 100%;
+  padding: 8px 24px;
+  border-radius: 16px;
+  text-transform: none;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  background: linear-gradient(135deg, #2563eb 0%, #0f766e 100%);
+  box-shadow: 0 14px 26px rgba(37, 99, 235, 0.28);
+}
+
+.user-create-submit.MuiButton-root:hover {
+  box-shadow: 0 18px 32px rgba(37, 99, 235, 0.32);
+}
+
+@media (min-width: 600px) {
+  .user-create-submit.MuiButton-root {
+    width: auto;
+  }
+}

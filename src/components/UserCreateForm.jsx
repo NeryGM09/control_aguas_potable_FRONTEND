@@ -11,13 +11,13 @@ import {
   MenuItem,
   Paper,
   Select,
-  Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import { api, getApiBaseURL } from "../api/api";
+import "../styles/components/UserCreateForm.css";
 
 export default function UserCreateForm({ onClose }) {
   const [username, setUsername] = useState("");
@@ -32,35 +32,6 @@ export default function UserCreateForm({ onClose }) {
   const [errorDetail, setErrorDetail] = useState("");
   const [success, setSuccess] = useState("");
   const canClose = typeof onClose === "function";
-
-  const inputSx = {
-    "& .MuiOutlinedInput-root": {
-      backgroundColor: "rgba(255,255,255,0.96)",
-      borderRadius: 2,
-      boxShadow: "0 8px 18px rgba(15, 23, 42, 0.06)",
-      transition: "box-shadow 0.2s ease, transform 0.2s ease",
-      "& fieldset": {
-        borderColor: "rgba(148, 163, 184, 0.5)",
-      },
-      "&:hover fieldset": {
-        borderColor: "rgba(37, 99, 235, 0.6)",
-      },
-      "&.Mui-focused": {
-        boxShadow: "0 10px 22px rgba(37, 99, 235, 0.16)",
-        transform: "translateY(-1px)",
-      },
-      "&.Mui-focused fieldset": {
-        borderColor: "#2563eb",
-      },
-    },
-    "& .MuiInputLabel-root": {
-      color: "#334155",
-      fontWeight: 600,
-    },
-    "& .MuiInputLabel-root.Mui-focused": {
-      color: "#1d4ed8",
-    },
-  };
 
   const extractApiErrorMessage = (err, fallbackMessage) => {
     const detail = err?.response?.data?.detail;
@@ -237,54 +208,18 @@ export default function UserCreateForm({ onClose }) {
   };
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: { xs: 2, sm: 2.5, md: 3 },
-        mb: { xs: 2, md: 3 },
-        borderRadius: 3,
-        border: "1px solid rgba(148, 163, 184, 0.35)",
-        boxShadow: "0 16px 36px rgba(15, 23, 42, 0.1)",
-        width: "100%",
-        background:
-          "linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(240,249,255,0.9) 100%)",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <Box
-        sx={{
-          position: "absolute",
-          top: -90,
-          right: -120,
-          width: 200,
-          height: 200,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(59,130,246,0.18), transparent 70%)",
-          pointerEvents: "none",
-        }}
-      />
-      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-          <Box
-            sx={{
-              width: 46,
-              height: 46,
-              borderRadius: 2,
-              display: "grid",
-              placeItems: "center",
-              background:
-                "linear-gradient(135deg, rgba(37,99,235,0.2) 0%, rgba(16,185,129,0.18) 100%)",
-              boxShadow: "0 10px 20px rgba(15, 23, 42, 0.12)",
-            }}
-          >
-            <PersonAddAltRoundedIcon sx={{ color: "#1d4ed8" }} />
+    <Paper elevation={0} className="user-create-card">
+      <Box className="user-create-orb" />
+      <Box className="user-create-header">
+        <Box className="user-create-title-group">
+          <Box className="user-create-icon-box">
+            <PersonAddAltRoundedIcon className="user-create-icon" />
           </Box>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: "#0f172a" }}>
+            <Typography variant="h6" className="user-create-title">
               Crear usuario
             </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            <Typography variant="body2" className="user-create-subtitle">
               Alta de nuevos usuarios del sistema
             </Typography>
           </Box>
@@ -293,27 +228,15 @@ export default function UserCreateForm({ onClose }) {
           <IconButton
             type="button"
             onClick={onClose}
-            sx={{
-              backgroundColor: "rgba(148, 163, 184, 0.18)",
-              borderRadius: 2,
-              "&:hover": { backgroundColor: "rgba(37, 99, 235, 0.15)" },
-            }}
+            className="user-create-close"
           >
             <CloseRoundedIcon />
           </IconButton>
         )}
-      </Stack>
-      <Divider sx={{ my: 2 }} />
+      </Box>
+      <Divider className="user-create-divider" />
 
-      <Box
-        component="form"
-        onSubmit={onSubmit}
-        sx={{
-          display: "grid",
-          gap: 2,
-          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-        }}
-      >
+      <Box component="form" onSubmit={onSubmit} className="user-create-form">
         <TextField
           label="Nuevo usuario"
           value={username}
@@ -321,7 +244,7 @@ export default function UserCreateForm({ onClose }) {
           fullWidth
           required
           size="small"
-          sx={inputSx}
+          className="user-create-field"
         />
         <TextField
           label="Correo"
@@ -331,10 +254,10 @@ export default function UserCreateForm({ onClose }) {
           fullWidth
           required
           size="small"
-          sx={inputSx}
+          className="user-create-field"
           inputProps={{ autoComplete: "email" }}
         />
-        <FormControl fullWidth required size="small" sx={inputSx}>
+        <FormControl fullWidth required size="small" className="user-create-field">
           <InputLabel id="sociedad-label">Sociedad</InputLabel>
           <Select
             labelId="sociedad-label"
@@ -358,27 +281,27 @@ export default function UserCreateForm({ onClose }) {
           {sociedadesError && <FormHelperText error>{sociedadesError}</FormHelperText>}
         </FormControl>
         <TextField
-          label="Contraceña"
+          label="Contraseña"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           fullWidth
           required
           size="small"
-          sx={inputSx}
+          className="user-create-field"
           inputProps={{ autoComplete: "new-password" }}
         />
         {error && (
           <Alert
             severity="error"
             variant="filled"
-            sx={{ gridColumn: "1 / -1", borderRadius: 2 }}
+            className="user-create-alert"
           >
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            <Typography variant="body2" className="user-create-alert-title">
               {error}
             </Typography>
             {errorDetail && (
-              <Typography variant="caption" sx={{ opacity: 0.9 }}>
+              <Typography variant="caption" className="user-create-alert-detail">
                 {errorDetail}
               </Typography>
             )}
@@ -388,32 +311,19 @@ export default function UserCreateForm({ onClose }) {
           <Alert
             severity="success"
             variant="filled"
-            sx={{ gridColumn: "1 / -1", borderRadius: 2 }}
+            className="user-create-alert"
           >
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            <Typography variant="body2" className="user-create-alert-title">
               {success}
             </Typography>
           </Alert>
         )}
-        <Box sx={{ display: "flex", justifyContent: { xs: "stretch", sm: "flex-end" } }}>
+        <Box className="user-create-actions">
           <Button
             type="submit"
             variant="contained"
             disabled={submitting}
-            sx={{
-              width: { xs: "100%", sm: "auto" },
-              px: 3,
-              py: 1,
-              borderRadius: 2,
-              textTransform: "none",
-              fontWeight: 700,
-              letterSpacing: 0.4,
-              background: "linear-gradient(135deg, #2563eb 0%, #0f766e 100%)",
-              boxShadow: "0 14px 26px rgba(37, 99, 235, 0.28)",
-              "&:hover": {
-                boxShadow: "0 18px 32px rgba(37, 99, 235, 0.32)",
-              },
-            }}
+            className="user-create-submit"
           >
             {submitting ? "Creando..." : "Crear usuario"}
           </Button>

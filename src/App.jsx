@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Container, Paper, Typography } from "@mui/material";
+import { Box, Container, Divider, Paper, Typography } from "@mui/material";
 import TableControl from "./components/TableControl";
 import UserCreateForm from "./components/UserCreateForm";
 import ChangePasswordForm from "./components/ChangePasswordForm";
@@ -8,6 +8,7 @@ import LoadingScreen from "./components/LoadingScreen";
 import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
 import { getSociedadLogoSrc } from "./utils/sociedadLogo";
+import "./styles/App.css";
 
 function App() {
   const { user, loading, logout } = useAuth();
@@ -66,109 +67,35 @@ function App() {
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(circle at 15% 15%, rgba(59,130,246,0.12) 0%, transparent 35%), radial-gradient(circle at 85% 5%, rgba(34,197,94,0.12) 0%, transparent 40%), linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
-        py: { xs: 2, md: 4 },
-      }}
-    >
-      <Container
-        maxWidth={false}
-        sx={{
-          width: "100%",
-          px: { xs: 2, sm: 3, md: 4 },
-        }}
-      >
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 2, md: 3 },
-            mb: { xs: 2, md: 3 },
-            borderRadius: 4,
-            border: "1px solid rgba(148, 163, 184, 0.25)",
-            boxShadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
-            width: "100%",
-            position: "relative",
-            overflow: "hidden",
-            background:
-              "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(236,245,255,0.95) 100%)",
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              top: -60,
-              right: -80,
-              width: 200,
-              height: 200,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0) 70%)",
-            },
-            "&::after": {
-              content: '""',
-              position: "absolute",
-              bottom: -80,
-              left: -100,
-              width: 220,
-              height: 220,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle, rgba(34,197,94,0.16) 0%, rgba(34,197,94,0) 70%)",
-            },
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: { xs: "column", md: "row" },
-              gap: { xs: 1.5, md: 3 },
-              alignItems: { xs: "center", md: "center" },
-              justifyContent: "space-between",
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: { xs: "column", sm: "row" },
-                alignItems: "center",
-                textAlign: { xs: "center", sm: "left" },
-                gap: { xs: 1, sm: 2.5 },
-                position: "relative",
-                zIndex: 1,
-              }}
-            >
+    <Box className="app-root">
+      <Container maxWidth={false} className="app-container">
+        <Paper elevation={0} className="app-header">
+          <Box className="app-header-row">
+            <Box className="app-brand">
               <Box
                 component="img"
                 src={logoSrc}
                 alt="Logo"
-                sx={{ height: { xs: 50, sm: 62 }, width: "auto", objectFit: "contain" }}
+                className="app-logo"
               />
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.4 }}>
+              <Box className="app-title-group">
                 <Typography
                   variant="overline"
-                  sx={{
-                    letterSpacing: 3,
-                    color: "text.secondary",
-                    fontFamily: "'Trebuchet MS', 'Segoe UI', sans-serif",
-                  }}
+                  className="app-overline"
                 >
                   Control de Agua Potable
                 </Typography>
                 <Typography
-                  variant="h6"
-                  sx={{
-                    fontWeight: 700,
-                    color: "#0f172a",
-                    fontFamily: "'Trebuchet MS', 'Segoe UI', sans-serif",
-                  }}
+                  variant="h5"
+                  className="app-title"
                 >
                   Panel de registros
                 </Typography>
               </Box>
             </Box>
 
-            <Box sx={{ position: "relative", zIndex: 1 }}>
+            <Divider className="app-divider" />
+            <Box className="app-actions">
               <ProfileMenu
                 user={user}
                 isAdmin={isAdmin}
@@ -191,5 +118,4 @@ function App() {
     </Box>
   );
 }
-
 export default App;

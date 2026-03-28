@@ -1,77 +1,23 @@
 import React from "react";
 import { Box } from "@mui/material";
 import headSvg from "../assets/head.svg";
+import "../styles/components/AnimatedLogo.css";
 
 export default function AnimatedLogo({ width = { xs: 220, sm: 280 }, showText = true }) {
+  const resolveWidth = (value) => {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === "number") return `${value}px`;
+    return String(value);
+  };
+
+  const baseWidth = resolveWidth(width?.xs ?? width);
+  const smWidth = resolveWidth(width?.sm ?? width?.xs ?? width);
+  const style = {};
+  if (baseWidth) style["--logo-width"] = baseWidth;
+  if (smWidth) style["--logo-width-sm"] = smWidth;
+
   return (
-    <Box
-      sx={{
-        width,
-        maxWidth: "100%",
-        mx: "auto",
-        "@keyframes logoFloat": {
-          "0%, 100%": { transform: "translateY(0px)" },
-          "50%": { transform: "translateY(-6px)" },
-        },
-        "@keyframes caneSway": {
-          "0%, 100%": { transform: "rotate(-1.2deg)" },
-          "50%": { transform: "rotate(1.4deg)" },
-        },
-        "@keyframes lakePulse": {
-          "0%, 100%": { transform: "scale(0.99)", opacity: 0.92 },
-          "50%": { transform: "scale(1.02)", opacity: 1 },
-        },
-        "@keyframes ripplePulse": {
-          "0%": { opacity: 0.5, transform: "scale(0.98)" },
-          "55%": { opacity: 0.9, transform: "scale(1.02)" },
-          "100%": { opacity: 0.6, transform: "scale(1.04)" },
-        },
-        "@keyframes shimmerMove": {
-          "0%": { transform: "translateX(-6px)" },
-          "100%": { transform: "translateX(6px)" },
-        },
-        "& svg": {
-          display: "block",
-          width: "100%",
-          height: "auto",
-        },
-        "& .logo-float": {
-          animation: "logoFloat 6s ease-in-out infinite",
-          transformOrigin: "center",
-          transformBox: "fill-box",
-        },
-        "& .logo-cane": {
-          animation: "caneSway 7s ease-in-out infinite",
-          transformOrigin: "center",
-          transformBox: "fill-box",
-        },
-        "& .logo-lake": {
-          animation: "lakePulse 5.4s ease-in-out infinite",
-          transformOrigin: "center",
-          transformBox: "fill-box",
-        },
-        "& .logo-ripple": {
-          animation: "ripplePulse 3.2s ease-in-out infinite",
-          transformOrigin: "center",
-          transformBox: "fill-box",
-        },
-        "& .ripple-2": { animationDelay: "0.35s" },
-        "& .ripple-3": { animationDelay: "0.7s" },
-        "& .logo-shimmer": {
-          animation: "shimmerMove 4.8s ease-in-out infinite alternate",
-        },
-        "& .logo-text": {
-          fontFamily: "'Manrope', 'Trebuchet MS', 'Segoe UI', sans-serif",
-          fontWeight: 700,
-          letterSpacing: 1.4,
-        },
-        "@media (prefers-reduced-motion: reduce)": {
-          "& .logo-float, & .logo-cane, & .logo-lake, & .logo-ripple, & .logo-shimmer": {
-            animation: "none",
-          },
-        },
-      }}
-    >
+    <Box className="animated-logo" style={style}>
       <svg viewBox="0 0 520 360" role="img" aria-label="Control de Aguas Potable">
         <defs>
           <linearGradient id="gLake" x1="0" y1="0" x2="1" y2="0">

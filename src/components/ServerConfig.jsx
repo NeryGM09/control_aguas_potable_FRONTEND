@@ -15,6 +15,7 @@ import {
   getApiBaseURLOverride,
   setApiBaseURL,
 } from "../api/api";
+import "../styles/components/ServerConfig.css";
 
 const TEST_TIMEOUT_MS = 5000;
 
@@ -63,25 +64,17 @@ export default function ServerConfig() {
   };
 
   return (
-    <Box sx={{ mt: 2 }}>
+    <Box className="server-config">
       <Button
         size="small"
         variant="text"
         onClick={() => setOpen((prev) => !prev)}
-        sx={{ textTransform: "none", fontWeight: 600 }}
+        className="server-config-toggle"
       >
         {open ? "Ocultar configuracion del servidor" : "Configurar servidor"}
       </Button>
       <Collapse in={open}>
-        <Box
-          sx={{
-            mt: 1.5,
-            p: 2,
-            borderRadius: 2,
-            border: "1px solid rgba(148, 163, 184, 0.35)",
-            background: "rgba(248, 250, 252, 0.8)",
-          }}
-        >
+        <Box className="server-config-panel">
           <Stack spacing={1.5}>
             <TextField
               label="Servidor (URL)"

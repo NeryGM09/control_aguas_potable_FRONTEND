@@ -1,0 +1,209 @@
+.app-root {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(circle at 15% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 35%),
+    radial-gradient(circle at 85% 5%, rgba(34, 197, 94, 0.12) 0%, transparent 40%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.85) 0%, rgba(238, 242, 247, 0.85) 100%),
+    url("../assets/fondoagua.png");
+  background-size: 140% 140%, 140% 140%, cover, cover;
+  background-position: 10% 0%, 90% 10%, center, center;
+  background-repeat: no-repeat;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+@media (min-width: 900px) {
+  .app-root {
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+}
+
+.app-container.MuiContainer-root {
+  width: 100%;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+@media (min-width: 600px) {
+  .app-container.MuiContainer-root {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+@media (min-width: 900px) {
+  .app-container.MuiContainer-root {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+.app-header.MuiPaper-root {
+  padding: 12px;
+  margin-bottom: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(236, 245, 255, 0.85) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@media (min-width: 600px) {
+  .app-header.MuiPaper-root {
+    padding: 16px;
+  }
+}
+
+@media (min-width: 900px) {
+  .app-header.MuiPaper-root {
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+}
+
+.app-header.MuiPaper-root::before {
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -80px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, rgba(59, 130, 246, 0) 70%);
+}
+
+.app-header.MuiPaper-root::after {
+  content: "";
+  position: absolute;
+  bottom: -80px;
+  left: -100px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.16) 0%, rgba(34, 197, 94, 0) 70%);
+}
+
+.app-header-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@media (min-width: 900px) {
+  .app-header-row {
+    flex-direction: row;
+    gap: 24px;
+  }
+}
+
+.app-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6.4px;
+  position: relative;
+  z-index: 1;
+}
+
+@media (min-width: 600px) {
+  .app-brand {
+    flex-direction: row;
+    text-align: left;
+    gap: 17.6px;
+  }
+}
+
+.app-logo {
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+}
+
+@media (min-width: 600px) {
+  .app-logo {
+    height: 56px;
+  }
+}
+
+.app-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6px;
+}
+
+@media (min-width: 600px) {
+  .app-title-group {
+    gap: 3.2px;
+  }
+}
+
+.app-overline.MuiTypography-root {
+  letter-spacing: 2px;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: #64748b;
+  font-weight: 600;
+}
+
+@media (min-width: 600px) {
+  .app-overline.MuiTypography-root {
+    letter-spacing: 2.6px;
+    font-size: 0.7rem;
+  }
+}
+
+.app-title.MuiTypography-root {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 1.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.3px;
+}
+
+@media (min-width: 600px) {
+  .app-title.MuiTypography-root {
+    font-size: 1.5rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .app-title.MuiTypography-root {
+    font-size: 1.7rem;
+  }
+}
+
+.app-divider.MuiDivider-root {
+  display: block;
+  width: 100%;
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+@media (min-width: 900px) {
+  .app-divider.MuiDivider-root {
+    display: none;
+  }
+}
+
+.app-actions {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+@media (min-width: 600px) {
+  .app-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+}
