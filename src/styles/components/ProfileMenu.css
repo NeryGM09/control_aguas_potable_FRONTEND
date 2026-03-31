@@ -97,15 +97,15 @@
   min-width: 32px;
 }
 
-.profile-menu-item-icon--password {
+.profile-menu-item-icon--password .MuiSvgIcon-root {
   color: #2563eb;
 }
 
-.profile-menu-item-icon--create {
+.profile-menu-item-icon--create .MuiSvgIcon-root {
   color: #16a34a;
 }
 
-.profile-menu-item-icon--logout {
+.profile-menu-item-icon--logout .MuiSvgIcon-root {
   color: #b91c1c;
 }
 

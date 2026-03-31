@@ -108,12 +108,6 @@ const parseLocalDate = (dateText) => {
   return null;
 };
 
-const truncateText = (value, max) => {
-  const text = String(value ?? "");
-  if (text.length <= max) return text;
-  return `${text.slice(0, Math.max(0, max - 3))}...`;
-};
-
 export default function TableControl() {
   const { user } = useAuth();
   const theme = useTheme();
@@ -346,15 +340,15 @@ export default function TableControl() {
       { key: "fecha", label: "Fecha", width: 48, align: "center" },
       { key: "hora", label: "Hora", width: 40, align: "center" },
       { key: "cruda_ph", label: "pH", width: 26, align: "center" },
-      { key: "cruda_cond", label: "Cond (uS/cm2)", width: 44, align: "center" },
-      { key: "cruda_turb", label: "Turb (NTU)", width: 40, align: "center" },
+      { key: "cruda_cond", label: "Cond\n(uS/cm2)", width: 44, align: "center" },
+      { key: "cruda_turb", label: "Turb\n(NTU)", width: 40, align: "center" },
       { key: "dec_ph", label: "pH", width: 26, align: "center" },
-      { key: "dec_cond", label: "Cond (uS/cm2)", width: 44, align: "center" },
-      { key: "dec_turb", label: "Turb (NTU)", width: 40, align: "center" },
+      { key: "dec_cond", label: "Cond\n(uS/cm2)", width: 44, align: "center" },
+      { key: "dec_turb", label: "Turb\n(NTU)", width: 40, align: "center" },
       { key: "trat_ph", label: "pH", width: 26, align: "center" },
-      { key: "trat_cond", label: "Cond (uS/cm2)", width: 44, align: "center" },
-      { key: "trat_turb", label: "Turb (NTU)", width: 40, align: "center" },
-      { key: "trat_cloro", label: "Cloro (ppm)", width: 34, align: "center" },
+      { key: "trat_cond", label: "Cond\n(uS/cm2)", width: 44, align: "center" },
+      { key: "trat_turb", label: "Turb\n(NTU)", width: 40, align: "center" },
+      { key: "trat_cloro", label: "Cloro\n(ppm)", width: 34, align: "center" },
       { key: "punto_muestreo", label: "Punto", width: 70, align: "left" },
       { key: "encargado", label: "Encargado", width: 70, align: "left" },
       { key: "observaciones", label: "Observaciones", width: 120, align: "left" },
@@ -367,7 +361,7 @@ export default function TableControl() {
     }
 
     const headerTopHeight = 18;
-    const headerBottomHeight = 18;
+    const headerBottomHeight = 22;
     const totalHeaderHeight = headerTopHeight + headerBottomHeight;
     const rowHeight = 18;
 
@@ -380,20 +374,36 @@ export default function TableControl() {
 
     const getColumn = (key) => columnPositions.find((col) => col.key === key);
 
+    const fitText = (text, maxWidth) => {
+      const value = String(text ?? "");
+      if (!value) return "";
+      if (doc.getTextWidth(value) <= maxWidth) return value;
+      const ellipsis = "...";
+      const ellipsisWidth = doc.getTextWidth(ellipsis);
+      if (ellipsisWidth >= maxWidth) return "";
+      let end = value.length;
+      while (end > 0 && doc.getTextWidth(value.slice(0, end)) + ellipsisWidth > maxWidth) {
+        end -= 1;
+      }
+      if (end <= 0) return value.slice(0, 1);
+      return `${value.slice(0, end)}${ellipsis}`;
+    };
+
     const drawCellText = (text, col, baselineY, options = {}) => {
       const padding = options.padding ?? 4;
       const align = col.align || "left";
+      const safeText = fitText(text, Math.max(0, col.width - padding * 2));
       if (align === "center") {
-        doc.text(String(text ?? ""), col.x + col.width / 2, baselineY, { align: "center" });
+        doc.text(safeText, col.x + col.width / 2, baselineY, { align: "center" });
         return;
       }
       if (align === "right") {
-        doc.text(String(text ?? ""), col.x + col.width - padding, baselineY, {
+        doc.text(safeText, col.x + col.width - padding, baselineY, {
           align: "right",
         });
         return;
       }
-      doc.text(String(text ?? ""), col.x + padding, baselineY);
+      doc.text(safeText, col.x + padding, baselineY);
     };
 
     let y = marginTop;
@@ -515,9 +525,24 @@ export default function TableControl() {
           doc.setFillColor(...(group.fill || palette.header));
           doc.rect(subX, y + headerTopHeight, col.width, headerBottomHeight, "F");
           doc.setTextColor(...palette.textMuted);
-          doc.text(col.label, subX + col.width / 2, y + headerTopHeight + 12, {
-            align: "center",
-          });
+          const labelLines = String(col.label ?? "").split("\n");
+          if (labelLines.length > 1) {
+            const lineHeight = 7.4;
+            const totalTextHeight = lineHeight * (labelLines.length - 1);
+            const startY =
+              y + headerTopHeight + headerBottomHeight / 2 - totalTextHeight / 2 + 2.5;
+            labelLines.forEach((line, index) => {
+              const safeLine = fitText(line, Math.max(0, col.width - 4));
+              doc.text(safeLine, subX + col.width / 2, startY + index * lineHeight, {
+                align: "center",
+              });
+            });
+          } else {
+            const safeLabel = fitText(labelLines[0], Math.max(0, col.width - 4));
+            doc.text(safeLabel, subX + col.width / 2, y + headerTopHeight + 14, {
+              align: "center",
+            });
+          }
           subX += col.width;
         });
       });
@@ -555,9 +580,9 @@ export default function TableControl() {
         formatValue(row.tratada?.conductividad),
         formatValue(row.tratada?.turbidez),
         formatValue(row.tratada?.cloro),
-        truncateText(row.punto_muestreo, 18),
-        truncateText(row.encargado, 14),
-        truncateText(row.observaciones ?? "", 32),
+        row.punto_muestreo || "",
+        row.encargado || "",
+        row.observaciones ?? "",
       ];
 
       if (rowIndex % 2 === 1) {
