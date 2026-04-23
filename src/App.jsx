@@ -2,13 +2,21 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Container, Divider, Paper, Typography } from "@mui/material";
 import TableControl from "./components/TableControl";
 import UserCreateForm from "./components/UserCreateForm";
-import ChangePasswordForm from "./components/ChangePasswordForm";
 import ProfileMenu from "./components/ProfileMenu";
 import LoadingScreen from "./components/LoadingScreen";
 import Login from "./pages/Login";
 import { useAuth } from "./auth/AuthContext";
 import { getSociedadLogoSrc } from "./utils/sociedadLogo";
 import "./styles/App.css";
+
+const isAdminRole = (role) => {
+  const value =
+    typeof role === "object" && role !== null
+      ? role.role ?? role.rol ?? role.name ?? role.nombre ?? ""
+      : role;
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "admin" || normalized === "administrador";
+};
 
 function App() {
   const { user, loading, logout } = useAuth();
@@ -18,13 +26,13 @@ function App() {
   const loginTimerRef = useRef(null);
   const logoSrc = useMemo(() => getSociedadLogoSrc(user), [user]);
 
-  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
-
-  const handleOpenPassword = () => {
-    if (isAdmin) {
-      setActivePanel("password");
+  const isAdmin = useMemo(() => {
+    if (isAdminRole(user?.role || user?.rol)) {
+      return true;
     }
-  };
+    const roles = Array.isArray(user?.roles) ? user.roles : [];
+    return roles.some(isAdminRole);
+  }, [user]);
 
   const handleOpenCreateUser = () => {
     setActivePanel("create-user");
@@ -33,6 +41,7 @@ function App() {
   useEffect(() => {
     const prevUser = prevUserRef.current;
     if (!prevUser && user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts the brief post-login transition when auth state appears.
       setPostLoginLoading(true);
       if (loginTimerRef.current) {
         clearTimeout(loginTimerRef.current);
@@ -99,7 +108,6 @@ function App() {
               <ProfileMenu
                 user={user}
                 isAdmin={isAdmin}
-                onOpenPassword={handleOpenPassword}
                 onOpenCreateUser={handleOpenCreateUser}
                 onLogout={logout}
               />
@@ -107,13 +115,10 @@ function App() {
           </Box>
         </Paper>
 
-        {activePanel === "password" && isAdmin && (
-          <ChangePasswordForm onClose={() => setActivePanel(null)} />
-        )}
         {activePanel === "create-user" && isAdmin && (
           <UserCreateForm onClose={() => setActivePanel(null)} />
         )}
-        <TableControl />
+        <TableControl isAdmin={isAdmin} />
       </Container>
     </Box>
   );

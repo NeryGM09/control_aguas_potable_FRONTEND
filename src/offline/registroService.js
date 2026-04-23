@@ -74,17 +74,26 @@ function dedupeRegistros(registros = []) {
   return output;
 }
 
+function filterRegistrosByOwner(registros = [], ownerFilter = null) {
+  const normalizedFilter = normalizeUsername(ownerFilter);
+  const safeRegistros = Array.isArray(registros) ? registros : [];
+  if (!normalizedFilter) {
+    return safeRegistros;
+  }
+
+  return safeRegistros.filter(
+    (registro) => normalizeUsername(registro?.encargado) === normalizedFilter
+  );
+}
+
 function resolveOwnerContext(options = {}) {
   const user = options.user || null;
   const username = options.username ?? user?.username ?? "";
   const ownerUsername = normalizeUsername(username);
-  const role = String(options.role ?? user?.role ?? "").toLowerCase();
   const ownerFilter =
     options.ownerFilter !== undefined
       ? normalizeUsername(options.ownerFilter)
-      : role === "admin"
-        ? null
-        : ownerUsername;
+      : ownerUsername;
   return { ownerUsername, ownerFilter };
 }
 
@@ -185,7 +194,7 @@ async function pushPendingCreates(ownerFilter = null) {
     registro: item.payload,
   }));
 
-  const res = await api.post("/sync/push", { items });
+  const res = await api.post("/api/control-aguas/sync/push", { items });
   const results = res?.data?.results || [];
 
   for (const result of results) {
@@ -206,7 +215,7 @@ async function pushPendingUpdates(ownerFilter = null) {
     }
 
     try {
-      await api.put(`/registros/${item.remote_id}`, item.payload);
+      await api.put(`/api/control-aguas/registros/${item.remote_id}`, item.payload);
       await markUpdateDone(item.id);
     } catch (err) {
       const status = err?.response?.status;
@@ -222,7 +231,9 @@ async function pullRemoteUpdates(ownerFilter = null) {
   const lastIdValue = await getMeta(metaKey);
   const sinceId = Number(lastIdValue || 0);
 
-  const res = await api.get("/sync/pull", { params: { since_id: sinceId } });
+  const res = await api.get("/api/control-aguas/sync/pull", {
+    params: { since_id: sinceId },
+  });
   const data = res?.data;
 
   if (data?.registros?.length) {
@@ -261,17 +272,34 @@ export async function initOffline(options = {}) {
 
 export async function getRegistros(options = {}) {
   const { ownerFilter } = resolveOwnerContext(options);
+  const includeAllUsers = options.includeAllUsers === true;
   const online = await getOnlineStatus();
   let remoteData = null;
 
   if (online) {
     try {
-      const res = await api.get("/registros/");
+      const res = await api.get("/api/control-aguas/registros/", {
+        params: includeAllUsers ? { all_users: true } : undefined,
+      });
       remoteData = res?.data || [];
       await cacheRemote(remoteData, ownerFilter);
-    } catch (err) {
+    } catch {
       remoteData = null;
     }
+  }
+
+  if (includeAllUsers) {
+    const local = await listLocalRegistros({ ownerUsername: ownerFilter });
+
+    if (!online || !Array.isArray(remoteData)) {
+      return dedupeRegistros(local);
+    }
+
+    if (!isNative()) {
+      return dedupeRegistros(remoteData);
+    }
+
+    return dedupeRegistros([...remoteData, ...local]);
   }
 
   if (isNative()) {
@@ -280,11 +308,41 @@ export async function getRegistros(options = {}) {
   }
 
   if (online && Array.isArray(remoteData)) {
-    return dedupeRegistros(remoteData);
+    return dedupeRegistros(filterRegistrosByOwner(remoteData, ownerFilter));
   }
 
   const local = await listLocalRegistros({ ownerUsername: ownerFilter });
   return dedupeRegistros(local);
+}
+
+export async function getRegistrosForWeeklyReport(options = {}) {
+  const { ownerUsername } = resolveOwnerContext(options);
+  const online = await getOnlineStatus();
+  if (!online) {
+    return [];
+  }
+
+  let remoteData = [];
+  try {
+    const res = await api.get("/api/control-aguas/sync/pull", {
+      params: { since_id: 0 },
+    });
+    remoteData = res?.data?.registros || [];
+  } catch {
+    try {
+      const res = await api.get("/api/control-aguas/registros/");
+      remoteData = res?.data || [];
+    } catch {
+      remoteData = [];
+    }
+  }
+
+  if (!isNative()) {
+    return dedupeRegistros(remoteData);
+  }
+
+  const local = await listLocalRegistros({ ownerUsername });
+  return dedupeRegistros([...remoteData, ...local]);
 }
 
 export async function createRegistro(payload, options = {}) {
@@ -293,12 +351,12 @@ export async function createRegistro(payload, options = {}) {
 
   if (online) {
     try {
-      const res = await api.post("/registros/", payload);
+      const res = await api.post("/api/control-aguas/registros/", payload);
       if (res?.data) {
         await upsertRemoteRegistro(res.data.id, res.data, { ownerUsername });
       }
       return res.data;
-    } catch (err) {
+    } catch {
       // fall back to local
     }
   }
@@ -320,7 +378,7 @@ export async function updateRegistro(record, payloadEditable, payloadFull, optio
 
   if (online && remoteId && typeof remoteId === "number") {
     try {
-      await api.put(`/registros/${remoteId}`, payloadEditable);
+      await api.put(`/api/control-aguas/registros/${remoteId}`, payloadEditable);
       await updateLocalByRemoteId(remoteId, mergedPayload, "synced", ownerUsername);
       return true;
     } catch (err) {

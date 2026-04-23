@@ -1,4 +1,5 @@
-.tc-root {
+.tc-root,
+.tc-edit-dialog {
   --tc-primary-1: #1d4ed8;
   --tc-primary-1-dark: #1e40af;
   --tc-primary-1-bright: #60a5fa;
@@ -15,6 +16,9 @@
   --tc-surface-alt: #f1f5f9;
   --tc-border-soft: rgba(148, 163, 184, 0.2);
   --tc-border: rgba(148, 163, 184, 0.35);
+}
+
+.tc-root {
   display: grid;
   gap: 24px;
   align-items: stretch;
@@ -441,6 +445,7 @@
   font-size: 0.95rem;
   letter-spacing: 0.2px;
   background: linear-gradient(135deg, var(--tc-primary-1) 0%, var(--tc-primary-2) 100%);
+  color: #ffffff;
   box-shadow: 0 14px 26px rgba(15, 118, 110, 0.2);
   transition: box-shadow 0.2s ease, background 0.2s ease;
 }
@@ -582,6 +587,49 @@
   background-color: rgba(245, 158, 11, 0.16);
   color: var(--tc-accent-strong);
   font-weight: 600;
+}
+
+.tc-report-filter {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 700px) {
+  .tc-report-filter {
+    grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr) auto;
+    gap: 12px;
+  }
+}
+
+.tc-report-week-field.MuiTextField-root {
+  width: 100%;
+}
+
+.tc-report-week-chip.MuiChip-root {
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(29, 78, 216, 0.22);
+  background-color: rgba(219, 234, 254, 0.72);
+  color: var(--tc-primary-1-dark);
+  font-weight: 700;
+}
+
+.tc-report-week-chip .MuiChip-label {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.tc-report-current-action.MuiButton-root {
+  min-height: 36px;
 }
 
 .tc-actions {
@@ -866,13 +914,18 @@
 
 .tc-edit-grid {
   display: grid;
-  gap: 16px;
+  gap: 20px;
 }
 
 .tc-edit-form {
   display: grid;
   gap: 16px;
   grid-template-columns: 1fr;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--tc-border-soft);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(219, 234, 254, 0.5) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
 
 @media (min-width: 600px) {
@@ -883,6 +936,72 @@
 
 .tc-edit-span {
   grid-column: 1 / -1;
+}
+
+.tc-edit-dialog.MuiPaper-root {
+  border-radius: 18px;
+  border: 1px solid var(--tc-border);
+  background: radial-gradient(circle at top right, rgba(219, 234, 254, 0.6) 0%, rgba(255, 255, 255, 0.96) 45%, rgba(240, 253, 250, 0.9) 100%);
+  box-shadow: 0 24px 46px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+  position: relative;
+}
+
+.tc-edit-dialog.MuiPaper-root::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--tc-primary-1) 0%, var(--tc-primary-2) 55%, var(--tc-accent) 100%);
+}
+
+.tc-edit-title.MuiDialogTitle-root {
+  padding: 18px 20px 12px;
+  font-weight: 700;
+  color: var(--tc-neutral-strong);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(219, 234, 254, 0.55) 100%);
+  border-bottom: 1px solid var(--tc-border-soft);
+}
+
+.tc-edit-content.MuiDialogContent-root {
+  padding: 18px 20px 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(241, 245, 249, 0.9) 100%);
+}
+
+.tc-edit-content.MuiDialogContent-root.MuiDialogContent-dividers {
+  border-color: var(--tc-border-soft);
+}
+
+.tc-edit-actions.MuiDialogActions-root {
+  padding: 12px 20px 18px;
+  gap: 12px;
+  background: rgba(248, 250, 252, 0.96);
+  border-top: 1px solid var(--tc-border-soft);
+}
+
+.tc-edit-actions .tc-primary-action.MuiButton-root {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--tc-primary-1) 0%, var(--tc-primary-2) 100%);
+}
+
+.tc-edit-actions .tc-primary-action.MuiButton-root:hover {
+  background: linear-gradient(135deg, var(--tc-primary-1-dark) 0%, var(--tc-primary-2) 100%);
+}
+
+.tc-edit-dialog .tc-section-card.MuiPaper-root {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 247, 251, 0.88) 100%);
+}
+
+@media (min-width: 600px) {
+  .tc-edit-content.MuiDialogContent-root {
+    padding: 22px 24px 26px;
+  }
+
+  .tc-edit-actions.MuiDialogActions-root {
+    padding: 14px 24px 20px;
+  }
 }
 
 .tc-snackbar-alert.MuiAlert-root {

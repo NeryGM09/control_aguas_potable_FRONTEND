@@ -6,3 +6,6 @@ android
 .env
 npm-debug.log
 yarn-error.log
+.tmp_*
+.idea
+.vscode

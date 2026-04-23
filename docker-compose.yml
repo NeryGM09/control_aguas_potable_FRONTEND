@@ -1,0 +1,44 @@
+services:
+  frontend_agua:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: https://api-catv.tresvalles.hn
+        VITE_API_BASE_URL_NATIVE: https://api-catv.tresvalles.hn
+    container_name: frontend_agua
+    ports:
+      - "8080:80"
+    depends_on:
+      - api-catv
+    networks:
+      - proxy_net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  api-catv:
+    build:
+      context: "C:/Users/Dell G15/Desktop/API_CATV"
+      dockerfile: Dockerfile
+    image: api-catv
+    container_name: api-catv
+    ports:
+      - "5020:8000"
+    env_file:
+      - path: "C:/Users/Dell G15/Desktop/API_CATV/backend/.env"
+        format: raw
+    environment:
+      - CONTROL_AGUAS_PREFIX=/api/control-aguas
+    volumes:
+      - "C:/Users/Dell G15/Desktop/API_CATV:/home/API_CATV"
+    networks:
+      - proxy_net
+
+networks:
+  proxy_net:
+    driver: bridge
+    name: proxy_net

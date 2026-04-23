@@ -7,6 +7,7 @@ import {
   FormControl,
   FormHelperText,
   IconButton,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Paper,
@@ -16,6 +17,8 @@ import {
 } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { api, getApiBaseURL } from "../api/api";
 import "../styles/components/UserCreateForm.css";
 
@@ -23,6 +26,7 @@ export default function UserCreateForm({ onClose }) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [sociedades, setSociedades] = useState([]);
   const [sociedadId, setSociedadId] = useState("");
   const [sociedadesLoading, setSociedadesLoading] = useState(false);
@@ -72,14 +76,6 @@ export default function UserCreateForm({ onClose }) {
       .join(" | ");
   };
 
-  const getMissingFields = (issues) =>
-    issues
-      .filter(
-        (issue) => issue.type?.includes("missing") || /requerido|required/i.test(issue.msg)
-      )
-      .map((issue) => issue.path)
-      .filter(Boolean);
-
   const buildErrorDetail = (err, issues = []) => {
     const baseURL = getApiBaseURL();
     const status = err?.response?.status;
@@ -101,11 +97,12 @@ export default function UserCreateForm({ onClose }) {
 
   useEffect(() => {
     let cancelled = false;
+
     const loadSociedades = async () => {
       setSociedadesLoading(true);
       setSociedadesError("");
       try {
-        const res = await api.get("/api/sociedades");
+        const res = await api.get("/api/control-aguas/sociedades");
         if (cancelled) return;
         const items = Array.isArray(res?.data) ? res.data : [];
         setSociedades(items);
@@ -119,6 +116,7 @@ export default function UserCreateForm({ onClose }) {
         if (!cancelled) setSociedadesLoading(false);
       }
     };
+
     loadSociedades();
     return () => {
       cancelled = true;
@@ -130,6 +128,7 @@ export default function UserCreateForm({ onClose }) {
     setError("");
     setErrorDetail("");
     setSuccess("");
+
     const cleanedUsername = String(username || "").trim();
     const cleanedEmail = String(email || "").trim();
     if (!cleanedUsername || !cleanedEmail || !password) {
@@ -140,6 +139,7 @@ export default function UserCreateForm({ onClose }) {
       setError("Selecciona la sociedad.");
       return;
     }
+
     setSubmitting(true);
     const sociedadIdNumber = Number(sociedadId);
     const payload = {
@@ -148,60 +148,39 @@ export default function UserCreateForm({ onClose }) {
       password,
       sociedad_id: Number.isFinite(sociedadIdNumber) ? sociedadIdNumber : undefined,
     };
+
     try {
-      await api.post("/auth/users", payload);
-      setSuccess("Usuario creado correctamente.");
+      await api.post("/api/auth/register", payload);
+      setSuccess(
+        "Usuario creado correctamente. En su primer ingreso deberá actualizar la contraseña."
+      );
       setUsername("");
       setEmail("");
       setPassword("");
     } catch (err) {
-      let nextErr = err;
-      let status = err?.response?.status;
-      let issues = parseValidationIssues(err);
-      const missingFields = getMissingFields(issues);
-      const missingAuthFields =
-        status === 422 &&
-        missingFields.includes("username") &&
-        missingFields.includes("password");
-
-      if (missingAuthFields) {
-        try {
-          const form = new URLSearchParams();
-          Object.entries(payload).forEach(([key, value]) => {
-            if (value !== undefined && value !== null) {
-              form.append(key, String(value));
-            }
-          });
-          await api.post("/auth/users", form, {
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          });
-          setSuccess("Usuario creado correctamente.");
-          setUsername("");
-          setEmail("");
-          setPassword("");
-          return;
-        } catch (retryErr) {
-          nextErr = retryErr;
-          status = retryErr?.response?.status;
-          issues = parseValidationIssues(retryErr);
-        }
-      }
+      const status = err?.response?.status;
+      const issues = parseValidationIssues(err);
 
       if (status === 401 || status === 403) {
-        setError("No autorizado. Tu sesi\u00f3n no tiene permisos.");
+        setError("No autorizado. Tu sesión no tiene permisos.");
       } else if (status === 409) {
         setError("El usuario ya existe.");
       } else if (status === 422) {
-        setError(formatValidationMessage(issues) || extractApiErrorMessage(nextErr, "Datos inválidos."));
+        setError(
+          formatValidationMessage(issues) ||
+            extractApiErrorMessage(err, "Datos inválidos.")
+        );
+      } else if (status === 400) {
+        setError(extractApiErrorMessage(err, "No se pudo crear el usuario."));
       } else {
         setError(
           extractApiErrorMessage(
-            nextErr,
+            err,
             "No se pudo crear el usuario. Revisa los datos."
           )
         );
       }
-      setErrorDetail(buildErrorDetail(nextErr, issues));
+      setErrorDetail(buildErrorDetail(err, issues));
     } finally {
       setSubmitting(false);
     }
@@ -225,11 +204,7 @@ export default function UserCreateForm({ onClose }) {
           </Box>
         </Box>
         {canClose && (
-          <IconButton
-            type="button"
-            onClick={onClose}
-            className="user-create-close"
-          >
+          <IconButton type="button" onClick={onClose} className="user-create-close">
             <CloseRoundedIcon />
           </IconButton>
         )}
@@ -282,21 +257,30 @@ export default function UserCreateForm({ onClose }) {
         </FormControl>
         <TextField
           label="Contraseña"
-          type="password"
+          type={showPassword ? "text" : "password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           fullWidth
           required
           size="small"
           className="user-create-field"
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  edge="end"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? <VisibilityOffRoundedIcon /> : <VisibilityRoundedIcon />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
           inputProps={{ autoComplete: "new-password" }}
         />
         {error && (
-          <Alert
-            severity="error"
-            variant="filled"
-            className="user-create-alert"
-          >
+          <Alert severity="error" variant="filled" className="user-create-alert">
             <Typography variant="body2" className="user-create-alert-title">
               {error}
             </Typography>
@@ -308,11 +292,7 @@ export default function UserCreateForm({ onClose }) {
           </Alert>
         )}
         {success && (
-          <Alert
-            severity="success"
-            variant="filled"
-            className="user-create-alert"
-          >
+          <Alert severity="success" variant="filled" className="user-create-alert">
             <Typography variant="body2" className="user-create-alert-title">
               {success}
             </Typography>

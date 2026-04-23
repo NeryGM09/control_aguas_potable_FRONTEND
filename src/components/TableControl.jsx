@@ -1,19 +1,18 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getApiBaseURL } from "../api/api";
+import { api, getApiBaseURL } from "../api/api";
 import {
   createRegistro,
   getOnlineStatus,
   getRegistros,
   initOffline,
   onNetworkStatusChange,
-  syncNow,
   updateRegistro,
 } from "../offline/registroService";
 import { Capacitor } from "@capacitor/core";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
-import { getSociedadLogoSrc } from "../utils/sociedadLogo";
+import { getSociedadLogoSrc, getSociedadName } from "../utils/sociedadLogo";
 import {
   Alert,
   Box,
@@ -70,6 +69,81 @@ const formatTimeHM = (date) => {
   return `${hours}:${minutes}`;
 };
 
+const formatTimeHMS = (date) => {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+};
+
+const HORA_SERVER_UTC_STORAGE_KEY = "registro_hora_server_utc";
+const DUPLICATE_SUBMIT_WINDOW_MS = 10000;
+
+const parseHoraParts = (value) => {
+  if (!value) return null;
+  const text = String(value).trim();
+  const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = match[3] !== undefined ? Number(match[3]) : 0;
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+    return null;
+  }
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
+    return null;
+  }
+  return { hours, minutes, seconds, hasSeconds: match[3] !== undefined };
+};
+
+const getCircularDiffMinutes = (left, right) => {
+  const diff = Math.abs(left - right) % 1440;
+  return diff > 720 ? 1440 - diff : diff;
+};
+
+const detectServerHoraUtc = (localHora, serverHora) => {
+  const localParts = parseHoraParts(localHora);
+  const serverParts = parseHoraParts(serverHora);
+  if (!localParts || !serverParts) return null;
+  const localMinutes = localParts.hours * 60 + localParts.minutes;
+  const serverMinutes = serverParts.hours * 60 + serverParts.minutes;
+  const offsetMinutes = new Date().getTimezoneOffset();
+  const expectedUtcMinutes = (localMinutes + offsetMinutes + 1440) % 1440;
+  if (getCircularDiffMinutes(serverMinutes, expectedUtcMinutes) <= 2) return true;
+  if (getCircularDiffMinutes(serverMinutes, localMinutes) <= 2) return false;
+  return null;
+};
+
+const detectServerHoraUtcFromRecord = (record) => {
+  const horaParts = parseHoraParts(record?.hora);
+  const referenceIso = record?.created_at ?? record?.updated_at;
+  if (!horaParts || !referenceIso) return null;
+  const referenceDate = new Date(referenceIso);
+  if (Number.isNaN(referenceDate.getTime())) return null;
+  const horaMinutes = horaParts.hours * 60 + horaParts.minutes;
+  const refMinutes = referenceDate.getHours() * 60 + referenceDate.getMinutes();
+  const offsetMinutes = referenceDate.getTimezoneOffset();
+  const localFromUtc = (horaMinutes - offsetMinutes + 1440) % 1440;
+  if (getCircularDiffMinutes(refMinutes, localFromUtc) <= 2) return true;
+  if (getCircularDiffMinutes(refMinutes, horaMinutes) <= 2) return false;
+  return null;
+};
+
+const convertUtcToLocalDateTime = (fecha, hora) => {
+  if (!fecha || !hora) return null;
+  const horaParts = parseHoraParts(hora);
+  if (!horaParts) return null;
+  const hh = String(horaParts.hours).padStart(2, "0");
+  const mm = String(horaParts.minutes).padStart(2, "0");
+  const ss = String(horaParts.seconds ?? 0).padStart(2, "0");
+  const utcDate = new Date(`${fecha}T${hh}:${mm}:${ss}Z`);
+  if (Number.isNaN(utcDate.getTime())) return null;
+  return {
+    fecha: formatDateYMD(utcDate),
+    hora: horaParts.hasSeconds ? formatTimeHMS(utcDate) : formatTimeHM(utcDate),
+  };
+};
+
 const getWeekRange = (baseDate = new Date()) => {
   const date = new Date(baseDate);
   const day = date.getDay(); // 0 = Sunday
@@ -108,7 +182,7 @@ const parseLocalDate = (dateText) => {
   return null;
 };
 
-export default function TableControl() {
+export default function TableControl({ isAdmin = false }) {
   const { user } = useAuth();
   const theme = useTheme();
   const [controles, setControles] = useState([]);
@@ -138,8 +212,28 @@ export default function TableControl() {
   });
   const [syncNotice, setSyncNotice] = useState({ open: false, message: "", severity: "success" });
   const [logoDataUrl, setLogoDataUrl] = useState("");
+  const [sociedadesCatalog, setSociedadesCatalog] = useState([]);
+  const [reportWeekDate, setReportWeekDate] = useState(() => formatDateYMD(new Date()));
+  const [serverHoraUTC, setServerHoraUTC] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const stored = window.localStorage.getItem(HORA_SERVER_UTC_STORAGE_KEY);
+    if (stored === "true") return true;
+    if (stored === "false") return false;
+    return null;
+  });
 
-  const now = useMemo(() => new Date(), []);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let timerId;
+    const tick = () => {
+      const next = new Date();
+      setNow(next);
+      const delay = 1000 - next.getMilliseconds();
+      timerId = setTimeout(tick, delay);
+    };
+    tick();
+    return () => clearTimeout(timerId);
+  }, []);
   const fechaActual = useMemo(() => {
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -147,13 +241,57 @@ export default function TableControl() {
     return `${year}-${month}-${day}`;
   }, [now]);
   const horaActual = useMemo(() => {
-    const hours = String(now.getHours()).padStart(2, "0");
-    const minutes = String(now.getMinutes()).padStart(2, "0");
-    const seconds = String(now.getSeconds()).padStart(2, "0");
-    return `${hours}:${minutes}:${seconds}`;
+    return formatTimeHMS(now);
   }, [now]);
-  const currentWeek = getWeekRange(new Date());
-  const weekLabel = `${formatDateDMY(currentWeek.start)} al ${formatDateDMY(currentWeek.end)}`;
+  const selectedReportWeek = useMemo(() => {
+    const selectedDate = parseLocalDate(reportWeekDate) || new Date();
+    return getWeekRange(selectedDate);
+  }, [reportWeekDate]);
+  const weekLabel = `${formatDateDMY(selectedReportWeek.start)} al ${formatDateDMY(
+    selectedReportWeek.end
+  )}`;
+
+  const persistServerHoraUTC = (value) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(HORA_SERVER_UTC_STORAGE_KEY, value ? "true" : "false");
+  };
+
+  const updateServerHoraUTC = (value) => {
+    setServerHoraUTC(value);
+    persistServerHoraUTC(value);
+  };
+
+  const getDisplayDateTime = (record) => {
+    const fecha = record?.fecha || "";
+    const hora = record?.hora || "";
+    if (serverHoraUTC !== true) return { fecha, hora };
+    if (record?._syncStatus === "pending") return { fecha, hora };
+    const converted = convertUtcToLocalDateTime(fecha, hora);
+    return converted ?? { fecha, hora };
+  };
+
+  const applyDisplayFields = (rows = []) =>
+    rows.map((row) => {
+      const { fecha, hora } = getDisplayDateTime(row);
+      return { ...row, _displayFecha: fecha, _displayHora: hora };
+    });
+
+  const controlesDisplay = useMemo(
+    () => applyDisplayFields(controles),
+    [controles, serverHoraUTC]
+  );
+
+  useEffect(() => {
+    if (serverHoraUTC !== null) return;
+    const sample = controles.find(
+      (control) => control?.hora && (control?.created_at || control?.updated_at)
+    );
+    if (!sample) return;
+    const guess = detectServerHoraUtcFromRecord(sample);
+    if (guess !== null) {
+      updateServerHoraUTC(guess);
+    }
+  }, [controles, serverHoraUTC]);
 
 
   const getTratadaIndicatorColor = (value, { min, max, lt } = {}) => {
@@ -166,10 +304,18 @@ export default function TableControl() {
   };
 
   const selectedRecord = useMemo(
-    () => controles.find((control) => control.id === selectedRecordId) || null,
-    [controles, selectedRecordId]
+    () => controlesDisplay.find((control) => control.id === selectedRecordId) || null,
+    [controlesDisplay, selectedRecordId]
   );
+  const editingDisplay = useMemo(() => {
+    if (!editingRecord) return { fecha: "", hora: "" };
+    return getDisplayDateTime(editingRecord);
+  }, [editingRecord, serverHoraUTC]);
   const logoSrc = useMemo(() => getSociedadLogoSrc(user), [user]);
+  const sociedadName = useMemo(
+    () => getSociedadName(user, sociedadesCatalog),
+    [user, sociedadesCatalog]
+  );
 
   const pendingCount = useMemo(
     () => controles.filter((control) => control._syncStatus === "pending").length,
@@ -178,6 +324,8 @@ export default function TableControl() {
   const pendingCountRef = useRef(pendingCount);
   const loadingCountRef = useRef(0);
   const submitGuardRef = useRef(false);
+  const activeSubmitKeyRef = useRef("");
+  const lastSavedSubmitRef = useRef({ key: "", at: 0 });
   const pendingNoticeSeverity = isOnline ? "info" : "warning";
   const pendingNoticeMessage = useMemo(() => {
     if (pendingCount === 0) return "";
@@ -190,6 +338,32 @@ export default function TableControl() {
       ? "Registro pendiente de envío. Se enviará automáticamente cuando vuelva el internet."
       : `Hay ${pendingCount} registros pendientes de envío. Se enviarán automáticamente cuando vuelva el internet.`;
   }, [isOnline, pendingCount]);
+
+  const handleReportWeekDateChange = (event) => {
+    const nextValue = event.target.value || fechaActual;
+    setReportWeekDate(nextValue > fechaActual ? fechaActual : nextValue);
+  };
+
+  const handleUseCurrentReportWeek = () => {
+    setReportWeekDate(fechaActual);
+  };
+
+  const buildSubmitKey = () =>
+    JSON.stringify([
+      user?.username || "",
+      puntoMuestreo,
+      observaciones,
+      cruda.ph,
+      cruda.conductividad,
+      cruda.turbidez,
+      decantada.ph,
+      decantada.conductividad,
+      decantada.turbidez,
+      tratada.ph,
+      tratada.conductividad,
+      tratada.turbidez,
+      tratada.cloro,
+    ].map((value) => String(value ?? "").trim()));
 
   const openEdit = (control) => {
     setEditError("");
@@ -287,7 +461,11 @@ export default function TableControl() {
     loadingCountRef.current += 1;
     setIsLoading(true);
     try {
-      const data = await getRegistros({ user });
+      const data = await getRegistros({
+        user,
+        includeAllUsers: isAdmin,
+        ownerFilter: isAdmin ? null : undefined,
+      });
       setControles(data);
     } finally {
       loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
@@ -308,14 +486,25 @@ export default function TableControl() {
   const getWeekRowsFromSource = (rows = [], range = getWeekRange(new Date())) => {
     const safeRows = Array.isArray(rows) ? rows : [];
     const weekRows = safeRows.filter((row) => {
-      const date = parseLocalDate(row.fecha);
+      const displayFecha = row?._displayFecha ?? row?.fecha;
+      const date = parseLocalDate(displayFecha);
       if (!date) return false;
       return date >= range.start && date <= range.end;
     });
     return { range, weekRows };
   };
 
-  const buildWeeklyPdf = (rows, range, logoUrl) => {
+  const loadWeeklyExportRows = async () => {
+    const online = await getOnlineStatus();
+    if (!online) {
+      return { online: false, rows: [] };
+    }
+
+    const rows = await getRegistros({ user, includeAllUsers: true });
+    return { online: true, rows: applyDisplayFields(rows) };
+  };
+
+  const buildWeeklyPdf = (rows, range, logoUrl, sociedadLabel) => {
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -372,8 +561,6 @@ export default function TableControl() {
       cursorX += col.width;
     });
 
-    const getColumn = (key) => columnPositions.find((col) => col.key === key);
-
     const fitText = (text, maxWidth) => {
       const value = String(text ?? "");
       if (!value) return "";
@@ -420,7 +607,7 @@ export default function TableControl() {
     if (logoUrl) {
       try {
         doc.addImage(logoUrl, "PNG", marginX + 12, y + 12, logoSize, logoSize);
-      } catch (err) {
+      } catch {
         // ignore logo render errors
       }
     }
@@ -433,7 +620,7 @@ export default function TableControl() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(...palette.textMuted);
-    doc.text("Control de Agua Potable", textStartX, y + 44);
+    doc.text(`Sociedad: ${sociedadLabel}`, textStartX, y + 44);
 
     const generatedAt = new Date();
     const badgeY = y + 18;
@@ -451,7 +638,6 @@ export default function TableControl() {
       .reverse()
       .forEach((label) => {
         const paddingX = 6;
-        const paddingY = 4;
         const textWidth = doc.getTextWidth(label);
         const badgeWidth = textWidth + paddingX * 2;
         badgeX -= badgeWidth;
@@ -567,9 +753,11 @@ export default function TableControl() {
     };
 
     const renderRow = (row, rowIndex) => {
+      const displayFecha = row?._displayFecha ?? row?.fecha;
+      const displayHora = row?._displayHora ?? row?.hora;
       const rowValues = [
-        row.fecha || "",
-        row.hora || "",
+        displayFecha || "",
+        displayHora || "",
         formatValue(row.cruda?.ph),
         formatValue(row.cruda?.conductividad),
         formatValue(row.cruda?.turbidez),
@@ -621,7 +809,7 @@ export default function TableControl() {
         if (logoUrl) {
           try {
             doc.addImage(logoUrl, "PNG", marginX + 12, y + 12, logoSize, logoSize);
-          } catch (err) {
+          } catch {
             // ignore logo render errors
           }
         }
@@ -632,11 +820,7 @@ export default function TableControl() {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
         doc.setTextColor(...palette.textMuted);
-        doc.text(
-          `Semana: ${formatDateDMY(range.start)} al ${formatDateDMY(range.end)}`,
-          pageTextStartX,
-          y + 44
-        );
+        doc.text(`Sociedad: ${sociedadLabel}`, pageTextStartX, y + 44);
         y += headerHeight + 14;
         renderHeader();
       }
@@ -649,7 +833,7 @@ export default function TableControl() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(...palette.textMuted);
-      doc.text("Control de Agua Potable", marginX, pageHeight - 16);
+      doc.text(`Control de Agua Potable | Sociedad: ${sociedadLabel}`, marginX, pageHeight - 16);
       doc.text(`Pagina ${page} de ${totalPages}`, marginX + tableWidth, pageHeight - 16, {
         align: "right",
       });
@@ -658,7 +842,7 @@ export default function TableControl() {
     return doc;
   };
 
-  const buildWeeklyExcelWorkbook = (rows = []) => {
+  const buildWeeklyExcelWorkbook = (rows = [], range = getWeekRange(new Date()), sociedadLabel = "") => {
     const toExcelValue = (value) => {
       if (value === null || value === undefined || value === "") return "";
       if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -688,8 +872,8 @@ export default function TableControl() {
     ];
 
     const dataRows = rows.map((row) => [
-      row.fecha || "",
-      row.hora || "",
+      (row?._displayFecha ?? row?.fecha) || "",
+      (row?._displayHora ?? row?.hora) || "",
       toExcelValue(row.cruda?.ph),
       toExcelValue(row.cruda?.conductividad),
       toExcelValue(row.cruda?.turbidez),
@@ -705,7 +889,18 @@ export default function TableControl() {
       row.observaciones ?? "",
     ]);
 
-    const worksheet = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+    const generatedAt = new Date();
+    const metadataRows = [
+      ["Reporte semanal de registros"],
+      ["Sociedad", sociedadLabel || "No especificada"],
+      ["Semana", `${formatDateDMY(range.start)} al ${formatDateDMY(range.end)}`],
+      ["Generado", `${formatDateDMY(generatedAt)} ${formatTimeHM(generatedAt)}`],
+      ["Registros", rows.length],
+      [],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([...metadataRows, header, ...dataRows]);
+    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } }];
     worksheet["!cols"] = [
       { wch: 12 },
       { wch: 8 },
@@ -737,28 +932,22 @@ export default function TableControl() {
     }
     setPdfBusy(true);
     try {
-      const range = getWeekRange(new Date());
-      let sourceRows = controles;
+      const range = selectedReportWeek;
+      const { online, rows: sourceRows } = await loadWeeklyExportRows();
 
-      if (!sourceRows.length) {
-        const online = await getOnlineStatus();
-        if (!online) {
-          showPdfNotice("warning", "Conectate a internet para descargar el PDF semanal.");
-          return;
-        }
-
-        await syncNow({ user });
-        sourceRows = await getRegistros({ user });
+      if (!online) {
+        showPdfNotice("warning", "Conectate a internet para descargar el PDF con todos los registros.");
+        return;
       }
 
       const { weekRows } = getWeekRowsFromSource(sourceRows, range);
 
       if (!weekRows.length) {
-        showPdfNotice("info", "No hay registros para la semana actual.");
+        showPdfNotice("info", "No hay registros para la semana seleccionada.");
         return;
       }
 
-      const doc = buildWeeklyPdf(weekRows, range, logoDataUrl);
+      const doc = buildWeeklyPdf(weekRows, range, logoDataUrl, sociedadName);
       const filename = `reporte_semanal_${formatDateYMD(range.start)}_al_${formatDateYMD(
         range.end
       )}.pdf`;
@@ -782,7 +971,7 @@ export default function TableControl() {
               );
               return;
             }
-          } catch (err) {
+          } catch {
             showPdfNotice(
               "warning",
               "No se pudo solicitar permiso de almacenamiento. Revisa los permisos de la app."
@@ -799,7 +988,7 @@ export default function TableControl() {
             recursive: true,
           });
           showPdfNotice("success", `PDF guardado en Documentos/${folder}/${filename}`);
-        } catch (err) {
+        } catch {
           try {
             await Filesystem.writeFile({
               path: `${folder}/${filename}`,
@@ -811,7 +1000,7 @@ export default function TableControl() {
               "warning",
               "No se pudo guardar en Archivos. El PDF quedó dentro de la app."
             );
-          } catch (innerErr) {
+          } catch {
             showPdfNotice("error", "No se pudo guardar el PDF en el teléfono.");
           }
         }
@@ -828,7 +1017,7 @@ export default function TableControl() {
         setTimeout(() => URL.revokeObjectURL(url), 0);
         showPdfNotice("success", "PDF descargado.");
       }
-    } catch (err) {
+    } catch {
       showPdfNotice("error", "No se pudo generar el PDF semanal.");
     } finally {
       setPdfBusy(false);
@@ -843,28 +1032,22 @@ export default function TableControl() {
     }
     setExcelBusy(true);
     try {
-      const range = getWeekRange(new Date());
-      let sourceRows = controles;
+      const range = selectedReportWeek;
+      const { online, rows: sourceRows } = await loadWeeklyExportRows();
 
-      if (!sourceRows.length) {
-        const online = await getOnlineStatus();
-        if (!online) {
-          showExcelNotice("warning", "Conectate a internet para descargar el Excel semanal.");
-          return;
-        }
-
-        await syncNow({ user });
-        sourceRows = await getRegistros({ user });
+      if (!online) {
+        showExcelNotice("warning", "Conectate a internet para descargar el Excel con todos los registros.");
+        return;
       }
 
       const { weekRows } = getWeekRowsFromSource(sourceRows, range);
 
       if (!weekRows.length) {
-        showExcelNotice("info", "No hay registros para la semana actual.");
+        showExcelNotice("info", "No hay registros para la semana seleccionada.");
         return;
       }
 
-      const workbook = buildWeeklyExcelWorkbook(weekRows);
+      const workbook = buildWeeklyExcelWorkbook(weekRows, range, sociedadName);
       const filename = `reporte_semanal_${formatDateYMD(range.start)}_al_${formatDateYMD(
         range.end
       )}.xlsx`;
@@ -884,7 +1067,7 @@ export default function TableControl() {
               );
               return;
             }
-          } catch (err) {
+          } catch {
             showExcelNotice(
               "warning",
               "No se pudo solicitar permiso de almacenamiento. Revisa los permisos de la app."
@@ -904,7 +1087,7 @@ export default function TableControl() {
             recursive: true,
           });
           showExcelNotice("success", `Excel guardado en Documentos/${folder}/${filename}`);
-        } catch (err) {
+        } catch {
           try {
             await Filesystem.writeFile({
               path: `${folder}/${filename}`,
@@ -916,7 +1099,7 @@ export default function TableControl() {
               "warning",
               "No se pudo guardar en Archivos. El Excel quedó dentro de la app."
             );
-          } catch (innerErr) {
+          } catch {
             showExcelNotice("error", "No se pudo guardar el Excel en el teléfono.");
           }
         }
@@ -936,7 +1119,7 @@ export default function TableControl() {
         setTimeout(() => URL.revokeObjectURL(url), 0);
         showExcelNotice("success", "Excel descargado.");
       }
-    } catch (err) {
+    } catch {
       showExcelNotice("error", "No se pudo generar el Excel semanal.");
     } finally {
       setExcelBusy(false);
@@ -948,7 +1131,6 @@ export default function TableControl() {
     setEditSubmitting(true);
     setEditError("");
     try {
-      const id = editingRecord.id;
       const payloadEditable = buildUpdatePayload(false);
       const payloadFull = buildUpdatePayload(true);
       const numericValues = [
@@ -990,9 +1172,12 @@ export default function TableControl() {
 
     const boot = async () => {
       try {
-        const cleanup = await initOffline({ user });
+        const cleanup = await initOffline({
+          user,
+          ownerFilter: isAdmin ? null : undefined,
+        });
         cleanupSync = typeof cleanup === "function" ? cleanup : () => {};
-      } catch (err) {
+      } catch {
         cleanupSync = () => {};
       }
 
@@ -1001,7 +1186,7 @@ export default function TableControl() {
         if (isMounted) {
           setIsOnline(online);
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
 
@@ -1023,7 +1208,34 @@ export default function TableControl() {
       cleanupSync?.();
       cleanupNetwork?.();
     };
-  }, [user?.username, user?.role]);
+  }, [user?.username, user?.role, user?.rol, isAdmin]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSociedadesCatalog = async () => {
+      if (!isAdmin) {
+        setSociedadesCatalog([]);
+        return;
+      }
+
+      try {
+        const response = await api.get("/api/control-aguas/sociedades");
+        if (!active) return;
+        const items = Array.isArray(response?.data) ? response.data : [];
+        setSociedadesCatalog(items);
+      } catch {
+        if (active) {
+          setSociedadesCatalog([]);
+        }
+      }
+    };
+
+    loadSociedadesCatalog();
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     if (pendingCount > 0) {
@@ -1072,7 +1284,7 @@ export default function TableControl() {
           }
         };
         reader.readAsDataURL(blob);
-      } catch (err) {
+      } catch {
         if (active) {
           setLogoDataUrl("");
         }
@@ -1087,17 +1299,33 @@ export default function TableControl() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (submitting || submitGuardRef.current) {
+    const submitKey = buildSubmitKey();
+    const lastSaved = lastSavedSubmitRef.current;
+    const isRepeatedRecentSubmit =
+      lastSaved.key === submitKey &&
+      Date.now() - lastSaved.at < DUPLICATE_SUBMIT_WINDOW_MS;
+
+    if (
+      submitting ||
+      submitGuardRef.current ||
+      activeSubmitKeyRef.current === submitKey ||
+      isRepeatedRecentSubmit
+    ) {
       return;
     }
     submitGuardRef.current = true;
+    activeSubmitKeyRef.current = submitKey;
     setError("");
     setErrorDetail("");
     setSubmitting(true);
     try {
+      const timestamp = new Date();
+      const fechaRegistro = formatDateYMD(timestamp);
+      const horaRegistro = formatTimeHMS(timestamp);
+      setNow(timestamp);
       const payload = {
-        fecha: fechaActual,
-        hora: horaActual,
+        fecha: fechaRegistro,
+        hora: horaRegistro,
         punto_muestreo: puntoMuestreo,
         encargado: user?.username || "",
         observaciones,
@@ -1138,6 +1366,11 @@ export default function TableControl() {
       }
 
       const created = await createRegistro(payload, { user });
+      lastSavedSubmitRef.current = { key: submitKey, at: Date.now() };
+      const utcGuess = detectServerHoraUtc(horaRegistro, created?.hora);
+      if (utcGuess !== null) {
+        updateServerHoraUTC(utcGuess);
+      }
       if (created?._syncStatus === "pending") {
         setOfflineNoticeOpen(true);
       }
@@ -1156,6 +1389,7 @@ export default function TableControl() {
     } finally {
       setSubmitting(false);
       submitGuardRef.current = false;
+      activeSubmitKeyRef.current = "";
     }
   };
 
@@ -1347,8 +1581,8 @@ export default function TableControl() {
                   size="small"
                   inputProps={{
                     style: {
-                      color: getTratadaIndicatorColor(tratada.ph, { min: 7, max: 8 }),
-                      WebkitTextFillColor: getTratadaIndicatorColor(tratada.ph, { min: 7, max: 8 }),
+                      color: getTratadaIndicatorColor(tratada.ph, { min: 6.5, max: 8.5 }),
+                      WebkitTextFillColor: getTratadaIndicatorColor(tratada.ph, { min: 6.5, max: 8.5 }),
                     },
                   }}
                 />
@@ -1470,6 +1704,33 @@ export default function TableControl() {
           </Box>
         </Box>
 
+        <Box className="tc-report-filter">
+          <TextField
+            label="Semana del reporte"
+            type="date"
+            value={reportWeekDate}
+            onChange={handleReportWeekDateChange}
+            size="small"
+            className="tc-report-week-field"
+            inputProps={{ max: fechaActual }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <Chip
+            label={`Descarga ${weekLabel}`}
+            size="small"
+            className="tc-report-week-chip"
+          />
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={handleUseCurrentReportWeek}
+            size="medium"
+            className="tc-tertiary-action tc-report-current-action"
+          >
+            Semana actual
+          </Button>
+        </Box>
+
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -1507,7 +1768,7 @@ export default function TableControl() {
 
         <Box className="tc-mobile-list">
           <Stack spacing={2}>
-            {controles.map((control) => (
+            {controlesDisplay.map((control) => (
               <Paper
                 key={`card-${control.id}`}
                 variant="outlined"
@@ -1517,7 +1778,8 @@ export default function TableControl() {
                 <Stack spacing={1.25}>
                   <Box className="tc-card-header">
                     <Typography variant="subtitle2" className="tc-card-title">
-                      {control.fecha} · {control.hora}
+                      {(control._displayFecha ?? control.fecha) || ""} ·{" "}
+                      {(control._displayHora ?? control.hora) || ""}
                     </Typography>
                     <Box className="tc-card-chip-row">
                       <Chip
@@ -1770,7 +2032,7 @@ export default function TableControl() {
                 </TableRow>
               </TableHead>
               <TableBody className="tc-table-body">
-                {controles.map((control) => (
+                {controlesDisplay.map((control) => (
                   <TableRow
                     key={`registro-${control.id}`}
                     hover
@@ -1778,8 +2040,12 @@ export default function TableControl() {
                     selected={selectedRecordId === control.id}
                     className="tc-row"
                   >
-                    <TableCell className="border">{control.fecha}</TableCell>
-                    <TableCell className="border">{control.hora}</TableCell>
+                    <TableCell className="border">
+                      {(control._displayFecha ?? control.fecha) || ""}
+                    </TableCell>
+                    <TableCell className="border">
+                      {(control._displayHora ?? control.hora) || ""}
+                    </TableCell>
                     <TableCell className="border">{control.cruda?.ph}</TableCell>
                     <TableCell className="border">
                       {control.cruda?.conductividad}
@@ -1839,14 +2105,32 @@ export default function TableControl() {
         </Box>
       </Paper>
 
-      <Dialog open={Boolean(editingRecord)} onClose={closeEdit} fullWidth maxWidth="md">
-        <DialogTitle>Editar registro</DialogTitle>
-        <DialogContent dividers>
+      <Dialog
+        open={Boolean(editingRecord)}
+        onClose={closeEdit}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{ className: "tc-edit-dialog" }}
+      >
+        <DialogTitle className="tc-edit-title">Editar registro</DialogTitle>
+        <DialogContent dividers className="tc-edit-content">
           {editingRecord && editValues && (
             <Box className="tc-edit-grid">
               <Box className="tc-edit-form">
-                <TextField label="Fecha" value={editingRecord.fecha} fullWidth disabled size="small" />
-                <TextField label="Hora" value={editingRecord.hora} fullWidth disabled size="small" />
+                <TextField
+                  label="Fecha"
+                  value={editingDisplay.fecha || editingRecord.fecha || ""}
+                  fullWidth
+                  disabled
+                  size="small"
+                />
+                <TextField
+                  label="Hora"
+                  value={editingDisplay.hora || editingRecord.hora || ""}
+                  fullWidth
+                  disabled
+                  size="small"
+                />
                 <TextField
                   label="Punto de muestreo"
                   value={editValues.punto_muestreo}
@@ -2072,7 +2356,7 @@ export default function TableControl() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="tc-edit-actions">
           <Button onClick={closeEdit} variant="outlined" className="tc-tertiary-action">
             Cancelar
           </Button>

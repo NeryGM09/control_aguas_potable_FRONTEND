@@ -11,7 +11,6 @@ import {
   Typography,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import "../styles/components/ProfileMenu.css";
@@ -19,7 +18,6 @@ import "../styles/components/ProfileMenu.css";
 export default function ProfileMenu({
   user,
   isAdmin,
-  onOpenPassword,
   onOpenCreateUser,
   onLogout,
 }) {
@@ -32,11 +30,6 @@ export default function ProfileMenu({
 
   const handleMenuClose = () => {
     setAnchorEl(null);
-  };
-
-  const handlePasswordClick = () => {
-    onOpenPassword();
-    handleMenuClose();
   };
 
   const handleCreateUserClick = () => {
@@ -76,9 +69,7 @@ export default function ProfileMenu({
         }}
       >
         <Box className="profile-menu-header">
-          <Avatar
-            className="profile-menu-header-avatar"
-          >
+          <Avatar className="profile-menu-header-avatar">
             {String(user?.username || "U").charAt(0).toUpperCase()}
           </Avatar>
           <Box>
@@ -91,14 +82,6 @@ export default function ProfileMenu({
           </Box>
         </Box>
         <Divider />
-        {isAdmin && (
-          <MenuItem onClick={handlePasswordClick}>
-            <ListItemIcon className="profile-menu-item-icon profile-menu-item-icon--password">
-              <LockRoundedIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="Cambiar contraseña" />
-          </MenuItem>
-        )}
         {isAdmin && (
           <MenuItem onClick={handleCreateUserClick}>
             <ListItemIcon className="profile-menu-item-icon profile-menu-item-icon--create">
@@ -115,7 +98,6 @@ export default function ProfileMenu({
           <ListItemText primary="Cerrar sesión" />
         </MenuItem>
       </Menu>
-
     </Box>
   );
 }

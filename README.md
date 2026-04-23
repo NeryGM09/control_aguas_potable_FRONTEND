@@ -9,6 +9,9 @@ Variables en `.env`:
 - `VITE_API_BASE_URL`: URL para la version web.
 - `VITE_API_BASE_URL_NATIVE`: URL para APK (si no se define, usa `VITE_API_BASE_URL`).
 
+Servidor actual configurado por defecto:
+- `https://api-catv.tresvalles.hn`
+
 Ejemplos:
 - Emulador Android: `http://10.0.2.2:8000`
 - Dispositivo en red local: `http://<IP_DEL_SERVIDOR>:8000`

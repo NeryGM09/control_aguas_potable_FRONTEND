@@ -6,7 +6,7 @@
   "server": {
     "cleartext": true,
     "allowNavigation": [
-      "172.16.6.120",
+      "172.16.6.106",
       "10.0.2.2",
       "localhost"
     ]
