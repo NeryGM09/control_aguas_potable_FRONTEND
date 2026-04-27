@@ -6,11 +6,13 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_API_BASE_URL=https://api-catv.tresvalles.hn
+ARG VITE_API_BASE_URL=/
 ARG VITE_API_BASE_URL_NATIVE=https://api-catv.tresvalles.hn
+ARG VITE_API_TIMEOUT=30000
 
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_API_BASE_URL_NATIVE=$VITE_API_BASE_URL_NATIVE
+ENV VITE_API_TIMEOUT=$VITE_API_TIMEOUT
 
 # Esto ayuda a detectar cambios en Docker (hot reload si usas dev)
 ENV CHOKIDAR_USEPOLLING=true

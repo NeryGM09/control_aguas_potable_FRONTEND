@@ -39,16 +39,21 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import "../styles/components/TableControl.css";
 
+// Esta función convierte cualquier valor a número
+// Maneja casos donde viene como texto o con coma (ej: "12,5")
 const parseNumber = (value) => {
   if (value === null || value === undefined) return Number.NaN;
   if (typeof value === "number") return value;
   const text = String(value).trim();
   if (!text) return Number.NaN;
+
+  // Reemplazo coma por punto para evitar errores
   const normalized = text.replace(",", ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
+// Formatea fecha en formato YYYY-MM-DD (para guardar en api_catv)
 const formatDateYMD = (date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -56,6 +61,7 @@ const formatDateYMD = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+// Formatea fecha en formato DD/MM/YYYY (para mostrar en la interfaz)
 const formatDateDMY = (date) => {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -69,6 +75,7 @@ const formatTimeHM = (date) => {
   return `${hours}:${minutes}`;
 };
 
+// Formatea hora con horas, minutos y segundos
 const formatTimeHMS = (date) => {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
@@ -79,9 +86,13 @@ const formatTimeHMS = (date) => {
 const HORA_SERVER_UTC_STORAGE_KEY = "registro_hora_server_utc";
 const DUPLICATE_SUBMIT_WINDOW_MS = 10000;
 
+// Aquí lo que hago es separar una hora tipo "12:30:45"
+// en partes para poder trabajarla mejor
 const parseHoraParts = (value) => {
   if (!value) return null;
   const text = String(value).trim();
+
+  // Expresión regular para validar formato de hora
   const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!match) return null;
   const hours = Number(match[1]);
@@ -101,6 +112,8 @@ const getCircularDiffMinutes = (left, right) => {
   return diff > 720 ? 1440 - diff : diff;
 };
 
+// Aquí intento detectar si el servidor está guardando la hora en UTC
+// comparando la hora local con la que viene del backend
 const detectServerHoraUtc = (localHora, serverHora) => {
   const localParts = parseHoraParts(localHora);
   const serverParts = parseHoraParts(serverHora);

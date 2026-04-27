@@ -41,7 +41,6 @@ function App() {
   useEffect(() => {
     const prevUser = prevUserRef.current;
     if (!prevUser && user) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts the brief post-login transition when auth state appears.
       setPostLoginLoading(true);
       if (loginTimerRef.current) {
         clearTimeout(loginTimerRef.current);
@@ -64,7 +63,7 @@ function App() {
   }, [user]);
 
   if (loading) {
-    return <div className="p-4">Cargando...</div>;
+    return <div style={{ padding: 16 }}>Cargando...</div>;
   }
 
   if (!user) {

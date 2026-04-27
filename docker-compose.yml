@@ -4,8 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: https://api-catv.tresvalles.hn
-        VITE_API_BASE_URL_NATIVE: https://api-catv.tresvalles.hn
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/}
+        VITE_API_BASE_URL_NATIVE: ${VITE_API_BASE_URL_NATIVE:-https://api-catv.tresvalles.hn}
+        VITE_API_TIMEOUT: ${VITE_API_TIMEOUT:-30000}
     container_name: frontend_agua
     ports:
       - "8080:80"
@@ -22,19 +23,20 @@ services:
 
   api-catv:
     build:
-      context: "C:/Users/Dell G15/Desktop/API_CATV"
+      context: ${API_CATV_ROOT:-../API_CATV}
       dockerfile: Dockerfile
     image: api-catv
     container_name: api-catv
     ports:
       - "5020:8000"
     env_file:
-      - path: "C:/Users/Dell G15/Desktop/API_CATV/backend/.env"
-        format: raw
+      - ${API_CATV_ENV_FILE:-../API_CATV/backend/.env}
     environment:
-      - CONTROL_AGUAS_PREFIX=/api/control-aguas
+      CONTROL_AGUAS_PREFIX: /api/control-aguas
     volumes:
-      - "C:/Users/Dell G15/Desktop/API_CATV:/home/API_CATV"
+      - type: bind
+        source: ${API_CATV_ROOT:-../API_CATV}
+        target: /home/API_CATV
     networks:
       - proxy_net
 
